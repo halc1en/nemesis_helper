@@ -5,9 +5,9 @@ Interactive player aid for Nemesis board game
 # TODO
 
 ## Framework
-- [ ] Localization framework
-- [ ] Styling settings
-- [ ] Running on Windows
+- [x] Localization framework
+- [x] Styling settings
+- [x] Running on Windows
 - [ ] Running on Android
 - [ ] Running on iOS?
 - [ ] Firebase? local connection with cached database

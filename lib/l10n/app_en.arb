@@ -1,3 +1,10 @@
 {
-    "appTitle": "Nemesis helper"
+    "appTitle": "Nemesis helper",
+    "reference": "Reference",
+
+    "settings": "Settings",
+    "language": "Language: ",
+    "languageSystem": "System",
+    "scaleDescription": "Set text scale across the whole application",
+    "scale": "Text scale: "
 }

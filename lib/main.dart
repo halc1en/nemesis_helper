@@ -1,126 +1,189 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:flutter_localized_locales/flutter_localized_locales.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'package:nemesis_helper/ui/screen_settings.dart';
+import 'package:nemesis_helper/ui/settings.dart';
+import 'package:window_manager/window_manager.dart';
+
+void main() async {
+  // Wait for Flutter framework initialization
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.macOS) {
+    await windowManager.ensureInitialized();
+    await windowManager.setMinimumSize(const Size(250, 450));
+    await windowManager.setSize(const Size(400, 700));
+    await windowManager.center();
+  }
+
+  runApp(AppLoader(await SharedPreferences.getInstance()));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class AppLoader extends StatefulWidget {
+  const AppLoader(this.preferences, {super.key});
 
-  // This widget is the root of your application.
+  final SharedPreferences? preferences;
+
+  @override
+  State<AppLoader> createState() => _AppLoaderState();
+}
+
+class _AppLoaderState extends State<AppLoader> {
+  late UISettings _ui;
+
+  @override
+  void initState() {
+    _ui = UISettings(widget.preferences);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _ui.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a blue toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+    return ChangeNotifierProvider.value(
+      value: _ui,
+      child: Consumer<UISettings>(builder: (context, ui, child) {
+        return MaterialApp(
+          onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
+          localizationsDelegates: const [
+            LocaleNamesLocalizationsDelegate(),
+            ...AppLocalizations.localizationsDelegates
+          ],
+          locale: ui.locale,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.dark,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.blue,
+              brightness: Brightness.dark,
+              surface: Colors.blueGrey.shade900,
+              onSurface: Colors.blueGrey.shade100,
+              background: Colors.blueGrey.shade900,
+              onBackground: Colors.blueGrey.shade100,
+            ),
+          ),
+          builder: (context, child) {
+            final MediaQueryData data = MediaQuery.of(context);
+
+            // Set proper localized title and show window (async, so not right away)
+            windowManager.setTitle(AppLocalizations.of(context).appTitle);
+            windowManager.waitUntilReadyToShow(null, () async {
+              await windowManager.show();
+              await windowManager.focus();
+            });
+
+            // Apply text scaling
+            return MediaQuery(
+              data: data.copyWith(
+                  textScaleFactor: data.textScaleFactor * ui.scale,
+                  alwaysUse24HourFormat: true),
+              // Null will not happen since "home" is specified
+              child: child ?? const Text("No MediaQuery child found"),
+            );
+          },
+          home: App(ui),
+        );
+      }),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class App extends StatefulWidget {
+  const App(this.ui, {super.key});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  final UISettings ui;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<App> createState() => _AppState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
+class _AppState extends State<App> {
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
+    return DefaultTabController(
+      length: 1,
+      initialIndex: widget.ui.tabIndex,
+      child: SafeArea(
+        child: Scaffold(
+          bottomNavigationBar: Builder(builder: (context) {
+            return BottomAppBar(
+              padding: EdgeInsets.zero,
+              color: Theme.of(context).appBarTheme.backgroundColor,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TabBar(
+                      labelPadding: const EdgeInsets.all(4.0),
+                      onTap: (int index) {
+                        widget.ui.tabIndex = index;
+                      },
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      indicatorWeight: 3.0,
+                      tabs: [
+                        Tab(
+                          icon: const Icon(Icons.help_center_outlined),
+                          text: AppLocalizations.of(context).reference,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const VerticalDivider(
+                      thickness: 1.5, endIndent: 0.0, width: 1.5),
+                  IconButton(
+                    color: Theme.of(context).appBarTheme.foregroundColor,
+                    tooltip: AppLocalizations.of(context).settings,
+                    icon: const Icon(Icons.settings),
+                    onPressed: () {
+                      Navigator.of(context).push(MaterialPageRoute<void>(
+                          builder: (BuildContext context) =>
+                              const SettingsDialog(),
+                          fullscreenDialog: true));
+                    },
+                  ),
+                ],
+              ),
+            );
+          }),
+          body: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Text("I'm a Reference"),
+              ],
             ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+          ),
+          floatingActionButton: FloatingActionButton(
+            child: const Icon(Icons.add),
+            onPressed: () {},
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
+  }
+}
+
+class TabLabel extends StatelessWidget {
+  const TabLabel(this.label, {Key? key}) : super(key: key);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(label,
+        softWrap: false,
+        textScaleFactor: 1.0,
+        style: const TextStyle(fontSize: 13));
   }
 }
