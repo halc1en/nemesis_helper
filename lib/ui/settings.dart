@@ -69,6 +69,12 @@ class UISettings extends ChangeNotifier {
       if (tabIndexValue != null) {
         _tabIndex = tabIndexValue.clamp(1, 3);
       }
+
+      final languageValue = preferences.getString("language");
+      final countryValue = preferences.getString("country");
+      if (languageValue != null) {
+        _locale = Locale(languageValue, countryValue);
+      }
     } catch (err) {
       print("SharedPreferences error: $err");
     }

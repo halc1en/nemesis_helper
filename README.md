@@ -13,15 +13,26 @@ Interactive player aid for Nemesis board game
 - [ ] Firebase? local connection with cached database
 - [ ] Firebase? network connection
 
+## Design
+- [ ] Background
+- [ ] Retro animations
+
 ## Rules reference
 - [ ] Fill reference data in local database. Format?
 - [ ] Fill reference data in network database. Format?
 - [ ] Fetch reference to in-memory format (network first, local backup option)
 - [ ] Render reference
 - [ ] Bookmarking reference entries
+- [ ] JSON with hierarchy
 
 ## Game session 
 - [ ] Bottom navigation bar: Reference (done) + Game (new)
 - [ ] Session tokens in database
 - [ ] Add goals to database
-- [ ] In game allow fetching of random goals for different modes
+- [ ] Add characters to database
+- [ ] In game allow fetching of random goals for different modes and characters
+- [ ] CEO can see other players goals
+
+## Message chat for secret conversations
+
+## Cooperative mode

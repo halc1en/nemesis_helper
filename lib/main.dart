@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -72,6 +74,23 @@ class _AppLoaderState extends State<AppLoader> {
               onSurface: Colors.blueGrey.shade100,
               background: Colors.blueGrey.shade900,
               onBackground: Colors.blueGrey.shade100,
+            ),
+            textTheme: const TextTheme(
+              labelSmall: TextStyle(fontFamily: "Exo2"),
+              labelMedium: TextStyle(fontFamily: "Exo2"),
+              labelLarge: TextStyle(fontFamily: "Exo2"),
+              bodySmall: TextStyle(fontFamily: "Exo2"),
+              bodyMedium: TextStyle(fontFamily: "Exo2"),
+              bodyLarge: TextStyle(fontFamily: "Exo2"),
+              titleSmall: TextStyle(fontFamily: "Exo2"),
+              titleMedium: TextStyle(fontFamily: "Exo2"),
+              titleLarge: TextStyle(fontFamily: "Exo2"),
+              headlineSmall: TextStyle(fontFamily: "Exo2"),
+              headlineMedium: TextStyle(fontFamily: "Exo2"),
+              headlineLarge: TextStyle(fontFamily: "Exo2"),
+              displaySmall: TextStyle(fontFamily: "Exo2"),
+              displayMedium: TextStyle(fontFamily: "Exo2"),
+              displayLarge: TextStyle(fontFamily: "Exo2"),
             ),
           ),
           builder: (context, child) {
@@ -163,10 +182,6 @@ class _AppState extends State<App> {
                 Text("I'm a Reference"),
               ],
             ),
-          ),
-          floatingActionButton: FloatingActionButton(
-            child: const Icon(Icons.add),
-            onPressed: () {},
           ),
         ),
       ),
