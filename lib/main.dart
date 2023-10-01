@@ -1,15 +1,15 @@
-import 'dart:ui';
-
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localized_locales/flutter_localized_locales.dart';
+import 'package:nemesis_helper/ui/screen_reference.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'package:nemesis_helper/ui/screen_settings.dart';
 import 'package:nemesis_helper/ui/settings.dart';
-import 'package:window_manager/window_manager.dart';
 
 void main() async {
   // Wait for Flutter framework initialization
@@ -56,6 +56,8 @@ class _AppLoaderState extends State<AppLoader> {
     return ChangeNotifierProvider.value(
       value: _ui,
       child: Consumer<UISettings>(builder: (context, ui, child) {
+        const exo2Style = TextStyle(fontFamily: "Exo2");
+
         return MaterialApp(
           onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
           localizationsDelegates: const [
@@ -66,31 +68,35 @@ class _AppLoaderState extends State<AppLoader> {
           supportedLocales: AppLocalizations.supportedLocales,
           theme: ThemeData(
             useMaterial3: true,
+            visualDensity: const VisualDensity(
+              horizontal: VisualDensity.minimumDensity,
+              vertical: VisualDensity.minimumDensity,
+            ),
             brightness: Brightness.dark,
             colorScheme: ColorScheme.fromSeed(
               seedColor: Colors.blue,
               brightness: Brightness.dark,
               surface: Colors.blueGrey.shade900,
               onSurface: Colors.blueGrey.shade100,
-              background: Colors.blueGrey.shade900,
+              background: const Color.fromARGB(255, 10, 20, 30),
               onBackground: Colors.blueGrey.shade100,
             ),
             textTheme: const TextTheme(
-              labelSmall: TextStyle(fontFamily: "Exo2"),
-              labelMedium: TextStyle(fontFamily: "Exo2"),
-              labelLarge: TextStyle(fontFamily: "Exo2"),
-              bodySmall: TextStyle(fontFamily: "Exo2"),
-              bodyMedium: TextStyle(fontFamily: "Exo2"),
-              bodyLarge: TextStyle(fontFamily: "Exo2"),
-              titleSmall: TextStyle(fontFamily: "Exo2"),
-              titleMedium: TextStyle(fontFamily: "Exo2"),
-              titleLarge: TextStyle(fontFamily: "Exo2"),
-              headlineSmall: TextStyle(fontFamily: "Exo2"),
-              headlineMedium: TextStyle(fontFamily: "Exo2"),
-              headlineLarge: TextStyle(fontFamily: "Exo2"),
-              displaySmall: TextStyle(fontFamily: "Exo2"),
-              displayMedium: TextStyle(fontFamily: "Exo2"),
-              displayLarge: TextStyle(fontFamily: "Exo2"),
+              labelSmall: exo2Style,
+              labelMedium: exo2Style,
+              labelLarge: exo2Style,
+              bodySmall: exo2Style,
+              bodyMedium: exo2Style,
+              bodyLarge: exo2Style,
+              titleSmall: exo2Style,
+              titleMedium: exo2Style,
+              titleLarge: exo2Style,
+              headlineSmall: exo2Style,
+              headlineMedium: exo2Style,
+              headlineLarge: exo2Style,
+              displaySmall: exo2Style,
+              displayMedium: exo2Style,
+              displayLarge: exo2Style,
             ),
           ),
           builder: (context, child) {
@@ -132,7 +138,7 @@ class _AppState extends State<App> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 1,
+      length: 2,
       initialIndex: widget.ui.tabIndex,
       child: SafeArea(
         child: Scaffold(
@@ -144,7 +150,7 @@ class _AppState extends State<App> {
                 children: [
                   Expanded(
                     child: TabBar(
-                      labelPadding: const EdgeInsets.all(4.0),
+                      labelPadding: const EdgeInsets.all(3.0),
                       onTap: (int index) {
                         widget.ui.tabIndex = index;
                       },
@@ -152,8 +158,16 @@ class _AppState extends State<App> {
                       indicatorWeight: 3.0,
                       tabs: [
                         Tab(
-                          icon: const Icon(Icons.help_center_outlined),
+                          icon: Transform.scale(
+                              scale: 1.5,
+                              child: const Icon(Icons.help_center_outlined)),
                           text: AppLocalizations.of(context).reference,
+                        ),
+                        Tab(
+                          icon: Transform.scale(
+                              scale: 1.5,
+                              child: const Icon(Icons.text_snippet_outlined)),
+                          text: AppLocalizations.of(context).playSession,
                         ),
                       ],
                     ),
@@ -175,30 +189,14 @@ class _AppState extends State<App> {
               ),
             );
           }),
-          body: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Text("I'm a Reference"),
-              ],
-            ),
-          ),
+          body: Builder(builder: (context) {
+            return const TabBarView(children: [
+              Reference(),
+              SizedBox.shrink(),
+            ]);
+          }),
         ),
       ),
     );
-  }
-}
-
-class TabLabel extends StatelessWidget {
-  const TabLabel(this.label, {Key? key}) : super(key: key);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(label,
-        softWrap: false,
-        textScaleFactor: 1.0,
-        style: const TextStyle(fontSize: 13));
   }
 }

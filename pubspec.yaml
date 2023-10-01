@@ -49,10 +49,19 @@ dependencies:
 
   # Change default window settings on Windows
   window_manager: ^0.3.6
+  path_provider: ^2.1.1
+  path: ^1.8.3
+
+  # Json deserialize
+  json_annotation: ^4.8.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Json deserialize
+  build_runner: ^2.3.3
+  json_serializable: ^6.7.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -92,9 +101,6 @@ flutter:
   # list giving the asset and other descriptors for the font. For
   # example:
   fonts:
-    - family: Oswald
-      fonts:
-        - asset: assets/fonts/Oswald-VariableFont_wght.ttf
     - family: Exo2
       fonts:
         - asset: assets/fonts/Exo2-VariableFont_wght.ttf

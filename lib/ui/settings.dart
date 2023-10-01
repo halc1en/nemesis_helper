@@ -67,7 +67,7 @@ class UISettings extends ChangeNotifier {
 
       final tabIndexValue = preferences.getInt("tab_index");
       if (tabIndexValue != null) {
-        _tabIndex = tabIndexValue.clamp(1, 3);
+        _tabIndex = tabIndexValue.clamp(0, 1);
       }
 
       final languageValue = preferences.getString("language");

@@ -18,10 +18,14 @@ class SettingsDialog extends StatelessWidget {
         return ListView(children: [
           ListTile(
             title: Wrap(
+              clipBehavior: Clip.hardEdge,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(AppLocalizations.of(context).language),
+                Text(
+                  AppLocalizations.of(context).language,
+                ),
                 DropdownButton(
+                  isExpanded: true,
                   underline: const Underline(),
                   value: ui.locale,
                   onChanged: (Locale? v) => ui.locale = v,
