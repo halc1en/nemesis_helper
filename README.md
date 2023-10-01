@@ -37,5 +37,9 @@ Interactive player aid for Nemesis board game
 - [ ] CEO can see other players goals
 
 ## Message chat for secret conversations
+- [ ] Bottom navigation bar: Reference (done) + Game (done) + Chat (new)
+- [ ] Choosing player
+- [ ] Sending message
+- [ ] Receiving message
 
 ## Cooperative mode

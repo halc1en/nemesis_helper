@@ -21,7 +21,12 @@ class Nesting {
 
   static List<TextStyle>? _styles;
 
+  // Headers do not take part in multi-paragraph search
   bool isHeader() => this._depth <= 2;
+
+  // Comments explain previous paragraph clearer and should be indented
+  bool isComment() => this._depth >= 4;
+
   bool isFirstLevel() => this._depth == 0;
   Nesting nextLevel() => Nesting._explicit(this._depth + 1);
 
@@ -29,20 +34,26 @@ class Nesting {
   TextStyle? textStyle(BuildContext context) {
     if (Nesting._styles == null) {
       final textTheme = Theme.of(context).textTheme;
+      // These can't be null since they are explicitly initialized
+      // in MaterialApp.textTheme
+      final labelMedium = textTheme.labelMedium!;
       Nesting._styles = [
-        // These can't be null since they are explicitly initialized
-        // in MaterialApp.textTheme
         textTheme.headlineMedium!.copyWith(
             shadows: [Shadow(color: Colors.blue.shade200, blurRadius: 10)],
-            letterSpacing: -0.7),
+            letterSpacing: -0.7,
+            height: 1),
         textTheme.titleLarge!.copyWith(
             decoration: TextDecoration.underline,
-            shadows: [Shadow(color: Colors.blue.shade400, blurRadius: 5)]),
+            shadows: [Shadow(color: Colors.blue.shade400, blurRadius: 5)],
+            height: 1),
         textTheme.bodyLarge!.copyWith(
             color: Colors.blue,
             shadows: [Shadow(color: Colors.blue.shade600, blurRadius: 2)]),
         textTheme.bodyMedium!,
-        textTheme.labelMedium!.copyWith(fontStyle: FontStyle.italic),
+        labelMedium.copyWith(
+            color: Color.lerp(labelMedium.color, Colors.black, 0.2),
+            fontStyle: FontStyle.italic,
+            fontSize: labelMedium.fontSize! * 1.1),
       ];
     }
 
@@ -53,6 +64,8 @@ class Nesting {
 @JsonSerializable()
 class ReferenceChapter {
   ReferenceChapter({required this.text, required this.nested});
+
+  static const Indentation = 12.0;
 
   String? text;
 
@@ -114,13 +127,24 @@ class ReferenceChapter {
     spans.addAll(this.nested.map((ReferenceChapter child) =>
         child.showRichText(context, depth.nextLevel())));
 
-    return TextSpan(
+    final textSpan = TextSpan(
       text: text,
-      style: depth
-          .textStyle(context)
-          ?.copyWith(fontWeight: bold ? FontWeight.bold : null),
-      children: spans.isNotEmpty ? spans : null,
+      style: depth.textStyle(context)?.copyWith(
+            fontWeight: bold ? FontWeight.bold : null,
+          ),
+      children: spans,
     );
+
+    return (!depth.isComment())
+        ? textSpan
+        : WidgetSpan(
+            // Indent comment to link it with paragraph above
+            child: Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(left: Indentation),
+              child: Text.rich(textSpan),
+            ),
+          );
   }
 
   Widget show(BuildContext context, {Nesting depth = const Nesting()}) {
@@ -130,31 +154,24 @@ class ReferenceChapter {
     if (this.nested.isNotEmpty) {
       // First two levels can be collapsed
       if (depth.isFirstLevel()) {
-        widgets.add(Column(
-          children: this
-              .nested
-              .map((ReferenceChapter child) =>
-                  child.show(context, depth: depth.nextLevel()))
-              .toList(),
-        ));
+        widgets.addAll(
+          this.nested.map((ReferenceChapter child) =>
+              child.show(context, depth: depth.nextLevel())),
+        );
       } else {
-        widgets.add(Row(
-          children: [
-            const SizedBox(width: 16),
-            Expanded(
-              child: RichText(
-                textAlign: TextAlign.justify,
-                text: TextSpan(
-                  children: this
-                      .nested
-                      .map((ReferenceChapter child) =>
-                          child.showRichText(context, depth.nextLevel()))
-                      .toList(),
-                ),
-              ),
+        widgets.add(Container(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
+          child: RichText(
+            textAlign: TextAlign.justify,
+            text: TextSpan(
+              children: this
+                  .nested
+                  .map((ReferenceChapter child) =>
+                      child.showRichText(context, depth.nextLevel()))
+                  .toList(),
             ),
-            const SizedBox(width: 4),
-          ],
+          ),
         ));
       }
     }
@@ -164,6 +181,9 @@ class ReferenceChapter {
     final text = this.text;
     if (text == null) {
       return ListTile(
+        visualDensity: Theme.of(context)
+            .visualDensity
+            .copyWith(vertical: VisualDensity.minimumDensity),
         contentPadding: const EdgeInsets.symmetric(horizontal: 4),
         title: Column(children: widgets),
       );
@@ -251,7 +271,7 @@ class _ReferenceState extends State<Reference>
     super.build(context);
 
     final ref = this._reference;
-    if (ref == null) return const CircularProgressIndicator();
+    if (ref == null) return const Center(child: CircularProgressIndicator());
 
     this._tiles ??= ref.show(context);
     return Column(

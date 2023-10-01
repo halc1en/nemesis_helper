@@ -55,7 +55,7 @@ class _AppLoaderState extends State<AppLoader> {
     return ChangeNotifierProvider.value(
       value: _ui,
       child: Consumer<UISettings>(builder: (context, ui, child) {
-        const exo2Style = TextStyle(fontFamily: "Exo2");
+        const exo2Style = TextStyle(fontFamily: "Exo2", height: 1.3);
 
         return MaterialApp(
           onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
