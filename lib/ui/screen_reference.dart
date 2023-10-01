@@ -5,11 +5,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:json_annotation/json_annotation.dart';
+import 'package:nemesis_helper/ui/settings.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-
-part 'screen_reference.g.dart';
+import 'package:provider/provider.dart';
 
 @immutable
 class Nesting {
@@ -61,21 +60,16 @@ class Nesting {
   }
 }
 
-@JsonSerializable()
 class ReferenceChapter {
   ReferenceChapter({required this.text, required this.nested});
 
   static const Indentation = 12.0;
 
   String? text;
-
-  @JsonKey(defaultValue: false)
   bool bold = false;
 
-  @JsonKey(defaultValue: [])
   List<ReferenceChapter> nested;
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
   ExpansionTileController? expansionController;
 
   (bool, String) searchAndHighlight(RegExp regex,
@@ -201,17 +195,23 @@ class ReferenceChapter {
     }
   }
 
-  factory ReferenceChapter.fromJson(Map<String, dynamic> json) =>
-      _$ReferenceChapterFromJson(json);
-  Map<String, dynamic> toJson() =>
-      throw UnsupportedError('Serialization is not needed');
+  factory ReferenceChapter.fromJson(Locale? locale, Map<String, dynamic> json) {
+    return ReferenceChapter(
+      text: json['text_${locale?.languageCode ?? "en"}'] as String?,
+      nested: (json['nested'] as List<dynamic>?)
+              ?.map((e) =>
+                  ReferenceChapter.fromJson(locale, e as Map<String, dynamic>))
+              .toList() ??
+          [],
+    )..bold = json['bold'] as bool? ?? false;
+  }
 }
 
-@JsonSerializable()
 class ReferenceData {
+  final Locale? locale;
   final List<ReferenceChapter> nested;
 
-  ReferenceData({required this.nested});
+  ReferenceData({required this.locale, required this.nested});
 
   List<Widget> show(BuildContext context) {
     return this.nested.map((child) => child.show(context)).toList();
@@ -227,14 +227,20 @@ class ReferenceData {
     } catch (_) {}
   }
 
-  factory ReferenceData.fromJson(Map<String, dynamic> json) =>
-      _$ReferenceDataFromJson(json);
-  Map<String, dynamic> toJson() =>
-      throw UnsupportedError('Serialization is not needed');
+  factory ReferenceData.fromJson(Locale? locale, String jsonString) {
+    return ReferenceData(
+        locale: locale,
+        nested: (jsonDecode(jsonString) as List<dynamic>)
+            .map<ReferenceChapter>((json) =>
+                ReferenceChapter.fromJson(locale, json as Map<String, dynamic>))
+            .toList());
+  }
 }
 
 class Reference extends StatefulWidget {
-  const Reference({super.key});
+  const Reference({super.key, required this.ui});
+
+  final UISettings ui;
 
   @override
   State<Reference> createState() => _ReferenceState();
@@ -245,35 +251,50 @@ class _ReferenceState extends State<Reference>
   ReferenceData? _reference;
   List<Widget>? _tiles;
   final TextEditingController _searchController = TextEditingController();
+  bool _loading = false;
 
   @override
   bool get wantKeepAlive => true;
 
   @override
   void initState() {
+    updateJsonFromFile();
+    super.initState();
+  }
+
+  void updateJsonFromFile() {
+    // Nothing to reload if locale has not changed
+    if (_reference != null && _reference?.locale == widget.ui.locale) return;
+
+    // Check if loading already works asynchronously
+    if (_loading) return;
+    // Schedule JSON loading
+    this._loading = true;
+
     SchedulerBinding.instance.addPostFrameCallback((_) async {
       Directory documents = await getApplicationDocumentsDirectory();
       final jsonString =
           await File(p.join(documents.path, "reference.json")).readAsString();
-      final ref = ReferenceData(
-          nested: (jsonDecode(jsonString) as List<dynamic>)
-              .map<ReferenceChapter>((json) =>
-                  ReferenceChapter.fromJson(json as Map<String, dynamic>))
-              .toList());
+      final ref = ReferenceData.fromJson(widget.ui.locale, jsonString);
+
+      this._loading = false;
       setState(() => this._reference = ref);
     });
-
-    super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
+    // Since we got here something in Provider (i.e. UISettings)
+    // has changed, reload JSON
+    updateJsonFromFile();
+
     final ref = this._reference;
     if (ref == null) return const Center(child: CircularProgressIndicator());
 
-    this._tiles ??= ref.show(context);
+    this._tiles = ref.show(context);
+
     return Column(
       children: [
         TextField(

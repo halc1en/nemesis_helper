@@ -187,9 +187,9 @@ class _AppState extends State<App> {
             );
           }),
           body: Builder(builder: (context) {
-            return const TabBarView(children: [
-              Reference(),
-              SizedBox.shrink(),
+            return TabBarView(children: [
+              Reference(ui: widget.ui),
+              const SizedBox.shrink(),
             ]);
           }),
         ),
