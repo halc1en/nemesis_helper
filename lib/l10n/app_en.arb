@@ -1,6 +1,9 @@
 {
     "appTitle": "Nemesis helper",
+
     "reference": "Reference",
+    "searchHint": "Search",
+
     "playSession": "Play session",
 
     "settings": "SETTINGS",

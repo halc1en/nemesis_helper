@@ -25,7 +25,7 @@ Interactive player aid for Nemesis board game
 - [ ] Fetch reference to in-memory format (network first, local backup option)
 - [x] Render reference
 - [ ] Bookmarking reference entries
-- [ ] Filtering reference entries
+- [x] Filtering reference entries
 - [x] JSON with hierarchy
 
 ## Game session 

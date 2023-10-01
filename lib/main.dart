@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -68,10 +67,8 @@ class _AppLoaderState extends State<AppLoader> {
           supportedLocales: AppLocalizations.supportedLocales,
           theme: ThemeData(
             useMaterial3: true,
-            visualDensity: const VisualDensity(
-              horizontal: VisualDensity.minimumDensity,
-              vertical: VisualDensity.minimumDensity,
-            ),
+            visualDensity: VisualDensity.adaptivePlatformDensity
+                .copyWith(vertical: VisualDensity.compact.vertical),
             brightness: Brightness.dark,
             colorScheme: ColorScheme.fromSeed(
               seedColor: Colors.blue,

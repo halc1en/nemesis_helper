@@ -1,6 +1,9 @@
 {
     "appTitle": "Помощник по Немезиде",
+
     "reference": "Справка",
+    "searchHint": "Поиск",
+
     "playSession": "Игровая сессия",
 
     "settings": "НАСТРОЙКИ",
