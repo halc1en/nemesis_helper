@@ -8,7 +8,6 @@ import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:nemesis_helper/ui/settings.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:provider/provider.dart';
 
 @immutable
 class Nesting {
@@ -26,11 +25,13 @@ class Nesting {
   // Comments explain previous paragraph clearer and should be indented
   bool isComment() => this._depth >= 4;
 
-  bool isFirstLevel() => this._depth == 0;
-  Nesting nextLevel() => Nesting._explicit(this._depth + 1);
+  // First two levels use [ExpansionTile] and can be collapsed
+  bool isCollapsible() => this._depth <= 1;
+
+  Nesting next() => Nesting._explicit(this._depth + 1);
 
   // Get text style for each of 0 to 4 allowed nesting depths in JSON
-  TextStyle? textStyle(BuildContext context) {
+  TextStyle textStyle(BuildContext context) {
     if (Nesting._styles == null) {
       final textTheme = Theme.of(context).textTheme;
       // These can't be null since they are explicitly initialized
@@ -56,151 +57,201 @@ class Nesting {
       ];
     }
 
-    return Nesting._styles?.getRange(this._depth, this._depth + 1).firstOrNull;
+    return Nesting._styles![this._depth.clamp(0, Nesting._styles!.length - 1)];
   }
 }
 
 class ReferenceChapter {
-  ReferenceChapter({required this.text, required this.nested});
+  ReferenceChapter(
+      {required this.text, required this.depth, required this.nested});
 
   static const Indentation = 12.0;
 
+  // This chapter's text
   String? text;
   bool bold = false;
 
+  // Nesting level in JSON
+  Nesting depth;
+
+  // Nested chapters
   List<ReferenceChapter> nested;
 
   ExpansionTileController? expansionController;
 
-  (bool, String) searchAndHighlight(RegExp regex,
-      {Nesting depth = const Nesting()}) {
-    if (depth.isHeader()) {
-      // Avoid combining nested text at headers level,
-      // just check all nested levels and see if any matches
-      final found = nested
-          .map((nestedChapter) => nestedChapter
-              .searchAndHighlight(regex, depth: depth.nextLevel())
-              .$1)
-          .fold<bool>(false, (prevValue, found) => prevValue || found);
+  // Look for [regex] in [this.text] and highlight it
+  (InlineSpan, bool) showOneSpan(
+      BuildContext context, List<InlineSpan>? nestedSpans, RegExp? regex) {
+    final text = this.text;
 
-      // Search at this level too if needed
-      final text = this.text;
-      if (found || text != null && regex.allMatches(text).isNotEmpty) {
-        expansionController?.expand();
-        return (true, text ?? "");
-      } else {
-        expansionController?.collapse();
-        return (false, text ?? "");
-      }
-    } else {
-      // Combine nested chapters text and search results recursively
-      var (found, text) = nested
-          .map((nestedChapter) =>
-              nestedChapter.searchAndHighlight(regex, depth: depth.nextLevel()))
-          .fold<(bool, String)>(
-              (false, this.text ?? ""),
-              (prevValue, found) =>
-                  (prevValue.$1 || found.$1, prevValue.$2 + found.$2));
-
-      // Search at this level too if needed
-      if (found || regex.allMatches(text).isNotEmpty) {
-        expansionController?.expand();
-        return (true, text);
-      } else {
-        expansionController?.collapse();
-        return (false, text);
-      }
+    // If search field is empty then show this node without highlighting
+    if (text == null || regex == null) {
+      return (
+        TextSpan(
+          text: text,
+          style: this
+              .depth
+              .textStyle(context)
+              .copyWith(fontWeight: bold ? FontWeight.bold : null),
+          children: nestedSpans,
+        ),
+        false
+      );
     }
-  }
 
-  // Rich text is used at depth >=2 to allow words in bold
-  InlineSpan showRichText(BuildContext context, Nesting depth) {
-    final spans = <InlineSpan>[];
+    // If search field is not empty then highlight all matches
+    var matches = false;
+    final textStyle = this.depth.textStyle(context);
+    final highlightColor = Color.lerp(
+        textStyle.color ??
+            textStyle.foreground?.color ??
+            Theme.of(context).colorScheme.background,
+        Colors.black,
+        0.6);
 
-    // Recursively show the children
-    spans.addAll(this.nested.map((ReferenceChapter child) =>
-        child.showRichText(context, depth.nextLevel())));
-
-    final textSpan = TextSpan(
-      text: text,
-      style: depth.textStyle(context)?.copyWith(
+    final highlightSpans = <TextSpan>[];
+    void addSpan(String text, {required bool highlight, required bool last}) {
+      highlightSpans.add(TextSpan(
+        text: text,
+        style: textStyle.copyWith(
             fontWeight: bold ? FontWeight.bold : null,
-          ),
-      children: spans,
-    );
+            backgroundColor: (highlight) ? highlightColor : null),
+        // Show nested spans after the end of [this.text]
+        children: (last) ? nestedSpans : null,
+      ));
+    }
 
-    return (!depth.isComment())
-        ? textSpan
-        : WidgetSpan(
-            // Indent comment to link it with paragraph above
-            child: Container(
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.only(left: Indentation),
-              child: Text.rich(textSpan),
-            ),
-          );
+    int index = 0;
+    for (final match in regex.allMatches(text)) {
+      matches = true;
+      if (index < match.start) {
+        addSpan(text.substring(index, match.start),
+            highlight: false, last: false);
+      }
+      addSpan(match[0]!, highlight: true, last: match.end == text.length);
+      index = match.end;
+    }
+    if (index < text.length) {
+      addSpan(text.substring(index, text.length), highlight: false, last: true);
+    }
+    return (TextSpan(children: highlightSpans), matches);
   }
 
-  Widget show(BuildContext context, {Nesting depth = const Nesting()}) {
-    final widgets = <Widget>[];
+  // Render this chapter as [InlineSpan] suitable for
+  // embedding into [RichText] widget.
+  (InlineSpan, bool) recurseSpan(BuildContext context, RegExp? regex) {
+    // Recursively walk children
+    var (nestedSpans, nestedMatchesRegex) = this
+        .nested
+        .map((ReferenceChapter child) => child.recurseSpan(context, regex))
+        .fold<(List<InlineSpan>?, bool)>((null, false), (prev, element) {
+      return ((prev.$1 ?? [])..add(element.$1), prev.$2 || element.$2);
+    });
 
-    // Recursively show the children
-    if (this.nested.isNotEmpty) {
-      // First two levels can be collapsed
-      if (depth.isFirstLevel()) {
-        widgets.addAll(
-          this.nested.map((ReferenceChapter child) =>
-              child.show(context, depth: depth.nextLevel())),
-        );
-      } else {
+    // Render this node with children
+    var (span, thisMatchesRegex) = showOneSpan(context, nestedSpans, regex);
+
+    // Add indentation for comments
+    if (this.depth.isComment()) {
+      span = WidgetSpan(
+        child: Container(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.only(left: Indentation),
+          child: Text.rich(span),
+        ),
+      );
+    }
+
+    return (span, nestedMatchesRegex || thisMatchesRegex);
+  }
+
+  // Render this chapter as widget
+  (Widget, bool) recurseWidget(
+      BuildContext context, RegExp? regex, bool forceExpandCollapse) {
+    final List<Widget> widgets;
+    bool nestedMatchesRegex;
+
+    // Recursively walk children
+    if (depth.next().isCollapsible()) {
+      // Use [ExpansionTile] for collapsible chapters
+      (widgets, nestedMatchesRegex) = this
+          .nested
+          .map((ReferenceChapter child) =>
+              child.recurseWidget(context, regex, forceExpandCollapse))
+          .fold<(List<Widget>, bool)>(([], false), (prev, element) {
+        return (prev.$1..add(element.$1), prev.$2 || element.$2);
+      });
+    } else {
+      // Otherwise use [RichText]
+      final List<InlineSpan> nestedSpans;
+      (nestedSpans, nestedMatchesRegex) = this
+          .nested
+          .map((ReferenceChapter child) => child.recurseSpan(context, regex))
+          .fold<(List<InlineSpan>, bool)>(([], false), (prev, element) {
+        return (prev.$1..add(element.$1), prev.$2 || element.$2);
+      });
+
+      widgets = [];
+      if (nestedSpans.isNotEmpty) {
         widgets.add(Container(
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
-          child: RichText(
+          child: Text.rich(
+            TextSpan(children: nestedSpans),
             textAlign: TextAlign.justify,
-            text: TextSpan(
-              children: this
-                  .nested
-                  .map((ReferenceChapter child) =>
-                      child.showRichText(context, depth.nextLevel()))
-                  .toList(),
-            ),
           ),
         ));
       }
     }
 
-    // Expansion tile by definition requires some text in header
-    // so use normal tile if text was not specified
+    // [ExpansionTile] by definition requires some text in header
+    // so use simple [Column] if text was not specified
     final text = this.text;
     if (text == null) {
-      return ListTile(
-        visualDensity: Theme.of(context)
-            .visualDensity
-            .copyWith(vertical: VisualDensity.minimumDensity),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-        title: Column(children: widgets),
+      return (
+        Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Column(children: widgets)),
+        nestedMatchesRegex
       );
     } else {
-      this.expansionController = ExpansionTileController();
-      return ExpansionTile(
-        controller: this.expansionController,
-        initiallyExpanded: true,
-        maintainState: true,
-        shape: const Border.fromBorderSide(BorderSide.none),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-        title: Text(text, style: depth.textStyle(context)),
-        children: widgets,
+      final (span, thisMatchesRegex) = showOneSpan(context, null, regex);
+
+      // Force expanding and collapsing when user changes search field
+      // and do nothing otherwise
+      final expanded =
+          (regex == null || nestedMatchesRegex || thisMatchesRegex);
+      if (forceExpandCollapse) {
+        if (expanded) {
+          this.expansionController?.expand();
+        } else {
+          this.expansionController?.collapse();
+        }
+      }
+      this.expansionController ??= ExpansionTileController();
+
+      return (
+        ExpansionTile(
+          controller: this.expansionController,
+          initiallyExpanded: expanded,
+          maintainState: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+          title: Text.rich(span),
+          children: widgets,
+        ),
+        nestedMatchesRegex || thisMatchesRegex
       );
     }
   }
 
-  factory ReferenceChapter.fromJson(Locale? locale, Map<String, dynamic> json) {
+  factory ReferenceChapter.fromJson(
+      Nesting depth, Locale? locale, Map<String, dynamic> json) {
     return ReferenceChapter(
       text: json['text_${locale?.languageCode ?? "en"}'] as String?,
+      depth: depth,
       nested: (json['nested'] as List<dynamic>?)
-              ?.map((e) =>
-                  ReferenceChapter.fromJson(locale, e as Map<String, dynamic>))
+              ?.map((e) => ReferenceChapter.fromJson(
+                  depth.next(), locale, e as Map<String, dynamic>))
               .toList() ??
           [],
     )..bold = json['bold'] as bool? ?? false;
@@ -213,26 +264,21 @@ class ReferenceData {
 
   ReferenceData({required this.locale, required this.nested});
 
-  List<Widget> show(BuildContext context) {
-    return this.nested.map((child) => child.show(context)).toList();
-  }
-
-  void searchAndHighlight(String searchText) {
-    try {
-      final regex = RegExp(searchText,
-          caseSensitive: false, unicode: true, multiLine: true, dotAll: true);
-      for (var nestedChapter in nested) {
-        nestedChapter.searchAndHighlight(regex);
-      }
-    } catch (_) {}
+  List<Widget> show(
+      BuildContext context, RegExp? regex, bool forceExpandCollapse) {
+    return this
+        .nested
+        .map((child) =>
+            child.recurseWidget(context, regex, forceExpandCollapse).$1)
+        .toList();
   }
 
   factory ReferenceData.fromJson(Locale? locale, String jsonString) {
     return ReferenceData(
         locale: locale,
         nested: (jsonDecode(jsonString) as List<dynamic>)
-            .map<ReferenceChapter>((json) =>
-                ReferenceChapter.fromJson(locale, json as Map<String, dynamic>))
+            .map<ReferenceChapter>((json) => ReferenceChapter.fromJson(
+                const Nesting(), locale, json as Map<String, dynamic>))
             .toList());
   }
 }
@@ -249,9 +295,10 @@ class Reference extends StatefulWidget {
 class _ReferenceState extends State<Reference>
     with AutomaticKeepAliveClientMixin<Reference> {
   ReferenceData? _reference;
-  List<Widget>? _tiles;
   final TextEditingController _searchController = TextEditingController();
   bool _loading = false;
+  RegExp? _regex;
+  bool _forceExpandCollapse = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -293,7 +340,8 @@ class _ReferenceState extends State<Reference>
     final ref = this._reference;
     if (ref == null) return const Center(child: CircularProgressIndicator());
 
-    this._tiles = ref.show(context);
+    final forceExpandCollapse = this._forceExpandCollapse;
+    this._forceExpandCollapse = false;
 
     return Column(
       children: [
@@ -308,12 +356,28 @@ class _ReferenceState extends State<Reference>
             ),
           ),
           onChanged: (value) {
-            if (value.length >= 3) {
-              this._reference?.searchAndHighlight(value);
+            if (value.isNotEmpty) {
+              try {
+                setState(() {
+                  this._forceExpandCollapse = true;
+                  this._regex = RegExp(value,
+                      caseSensitive: false,
+                      unicode: true,
+                      multiLine: true,
+                      dotAll: true);
+                });
+              } catch (_) {}
+            } else if (this._regex != null) {
+              setState(() {
+                this._forceExpandCollapse = true;
+                this._regex = null;
+              });
             }
           },
         ),
-        Expanded(child: ListView(children: this._tiles!)),
+        Expanded(
+            child: ListView(
+                children: ref.show(context, this._regex, forceExpandCollapse))),
       ],
     );
   }

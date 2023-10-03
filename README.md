@@ -13,6 +13,7 @@ Interactive player aid for Nemesis board game
 - [ ] Firebase? local connection with cached database
 - [ ] Firebase? network connection
 - [ ] Web instance
+- [ ] Choose english by default if system language is not supported
 
 ## Design
 - [ ] Background
@@ -27,6 +28,9 @@ Interactive player aid for Nemesis board game
 - [ ] Bookmarking reference entries
 - [x] Filtering reference entries
 - [x] JSON with hierarchy
+- [ ] Inline markup in JSON for bold, italic
+- [ ] Hyperlinks in JSON ("id" field and inline links to it)
+- [ ] Lists in JSON with modifiable icon
 
 ## Game session 
 - [x] Bottom navigation bar: Reference (done) + Game (new)

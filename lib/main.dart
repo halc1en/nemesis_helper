@@ -95,6 +95,12 @@ class _AppLoaderState extends State<AppLoader> {
               displayMedium: exo2Style,
               displayLarge: exo2Style,
             ),
+            listTileTheme: const ListTileThemeData().copyWith(dense: true),
+            expansionTileTheme: const ExpansionTileThemeData().copyWith(
+              expandedAlignment: Alignment.centerLeft,
+              collapsedShape: const Border.fromBorderSide(BorderSide.none),
+              shape: const Border.fromBorderSide(BorderSide.none),
+            ),
           ),
           builder: (context, child) {
             final MediaQueryData data = MediaQuery.of(context);
