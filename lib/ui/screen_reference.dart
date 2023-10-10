@@ -5,9 +5,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:nemesis_helper/ui/settings.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
+import 'package:nemesis_helper/ui/settings.dart';
 
 @immutable
 class Nesting {
@@ -61,15 +62,64 @@ class Nesting {
   }
 }
 
+class TextFmtRange {
+  TextFmtRange(
+    this.start, {
+    this.bold = false,
+    this.italic = false,
+    this.highlight = false,
+  }) : assert(start >= 0);
+
+  final int start;
+  bool bold;
+  bool italic;
+  bool highlight;
+
+  TextFmtRange clone() {
+    return TextFmtRange(this.start,
+        bold: this.bold, italic: this.italic, highlight: this.highlight);
+  }
+}
+
 class ReferenceChapter {
   ReferenceChapter(
-      {required this.text, required this.depth, required this.nested});
+      {required String? text, required this.depth, required this.nested})
+      : formatNoHighlight = [] {
+    bool bold = false, italic = false;
+
+    int cursor = 0;
+    this.text = text?.splitMapJoin(RegExp(r'\\\*|\*\*|\*', unicode: true),
+        onMatch: (m) {
+      switch (m[0]) {
+        case "\\*":
+          cursor += 1;
+          return "*";
+        case "**":
+          bold = !bold;
+          return "";
+        case "*":
+          italic = !italic;
+          return "";
+        default:
+          assert(false);
+          return "";
+      }
+    }, onNonMatch: (n) {
+      this
+          .formatNoHighlight
+          .add(TextFmtRange(cursor, bold: bold, italic: italic));
+      cursor += n.length;
+      return n;
+    });
+  }
 
   static const Indentation = 12.0;
 
   // This chapter's text
   String? text;
-  bool bold = false;
+
+  // This chapter's format without search field highlight
+  List<TextFmtRange> formatNoHighlight;
 
   // Nesting level in JSON
   Nesting depth;
@@ -79,28 +129,76 @@ class ReferenceChapter {
 
   ExpansionTileController? expansionController;
 
-  // Look for [regex] in [this.text] and highlight it
-  (InlineSpan, bool) showOneSpan(
+  // Update [format] by changing highlight to passed [highlight] value
+  // starting at [cursor]
+  void updateFormatWithHighlight(List<TextFmtRange> format, int cursor,
+      {required bool highlight}) {
+    final int prevIndex;
+    try {
+      prevIndex = format.lastIndexWhere((s) => s.start <= cursor);
+    } catch (_) {
+      format.insert(0, TextFmtRange(cursor));
+      return;
+    }
+
+    final TextFmtRange prevFmt = format[prevIndex];
+    if (prevFmt.start == cursor) {
+      format.replaceRange(prevIndex, prevIndex + 1, [
+        TextFmtRange(cursor,
+            bold: prevFmt.bold, italic: prevFmt.italic, highlight: highlight)
+      ]);
+      format.skip(prevIndex + 1).forEach((f) => f.highlight = highlight);
+    } else {
+      format.insert(
+          prevIndex + 1,
+          TextFmtRange(cursor,
+              bold: prevFmt.bold,
+              italic: prevFmt.italic,
+              highlight: highlight));
+      format.skip(prevIndex + 2).forEach((f) => f.highlight = highlight);
+    }
+  }
+
+  // Renders [this.text] while taking into account:
+  //  - highlighting [regex] matches
+  //  - formatting according to [this.format]
+  //
+  // Returns rendered [InlineSpan] and whether [regex] matches
+  (InlineSpan, bool) renderText(
       BuildContext context, List<InlineSpan>? nestedSpans, RegExp? regex) {
     final text = this.text;
 
-    // If search field is empty then show this node without highlighting
-    if (text == null || regex == null) {
+    // Shortcut for the simplest case of plain text or no text
+    if (text == null || regex == null && this.formatNoHighlight.isEmpty) {
       return (
         TextSpan(
           text: text,
-          style: this
-              .depth
-              .textStyle(context)
-              .copyWith(fontWeight: bold ? FontWeight.bold : null),
+          style: this.depth.textStyle(context),
           children: nestedSpans,
         ),
         false
       );
     }
 
-    // If search field is not empty then highlight all matches
-    var matches = false;
+    // If search field is not empty then get all matches
+    final format = [...this.formatNoHighlight.map((fmt) => fmt.clone())];
+
+    bool matches = false;
+    if (regex != null) {
+      int cursor = 0;
+      text.splitMapJoin(regex, onMatch: (m) {
+        matches = true;
+        updateFormatWithHighlight(format, cursor, highlight: true);
+        cursor = m.end;
+        return "";
+      }, onNonMatch: (n) {
+        updateFormatWithHighlight(format, cursor, highlight: false);
+        cursor += n.length;
+        return "";
+      });
+    }
+
+    // And render those matches using [TextSpan]
     final textStyle = this.depth.textStyle(context);
     final highlightColor = Color.lerp(
         textStyle.color ??
@@ -108,32 +206,27 @@ class ReferenceChapter {
             Theme.of(context).colorScheme.background,
         Colors.black,
         0.6);
-
     final highlightSpans = <TextSpan>[];
-    void addSpan(String text, {required bool highlight, required bool last}) {
+    void addSpan(String text,
+        {required TextFmtRange fmt, List<InlineSpan>? children}) {
       highlightSpans.add(TextSpan(
         text: text,
         style: textStyle.copyWith(
-            fontWeight: bold ? FontWeight.bold : null,
-            backgroundColor: (highlight) ? highlightColor : null),
-        // Show nested spans after the end of [this.text]
-        children: (last) ? nestedSpans : null,
+            fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
+            fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
+            backgroundColor: fmt.highlight ? highlightColor : null),
+        children: children,
       ));
     }
 
-    int index = 0;
-    for (final match in regex.allMatches(text)) {
-      matches = true;
-      if (index < match.start) {
-        addSpan(text.substring(index, match.start),
-            highlight: false, last: false);
-      }
-      addSpan(match[0]!, highlight: true, last: match.end == text.length);
-      index = match.end;
+    TextFmtRange prevFmt = TextFmtRange(0);
+    for (final fmt in format) {
+      addSpan(text.substring(prevFmt.start, fmt.start), fmt: prevFmt);
+      prevFmt = fmt;
     }
-    if (index < text.length) {
-      addSpan(text.substring(index, text.length), highlight: false, last: true);
-    }
+    // Show nested spans after the end of [this.text]
+    addSpan(text.substring(prevFmt.start), fmt: prevFmt, children: nestedSpans);
+
     return (TextSpan(children: highlightSpans), matches);
   }
 
@@ -149,7 +242,7 @@ class ReferenceChapter {
     });
 
     // Render this node with children
-    var (span, thisMatchesRegex) = showOneSpan(context, nestedSpans, regex);
+    var (span, thisMatchesRegex) = renderText(context, nestedSpans, regex);
 
     // Add indentation for comments
     if (this.depth.isComment()) {
@@ -215,7 +308,7 @@ class ReferenceChapter {
         nestedMatchesRegex
       );
     } else {
-      final (span, thisMatchesRegex) = showOneSpan(context, null, regex);
+      final (span, thisMatchesRegex) = renderText(context, null, regex);
 
       // Force expanding and collapsing when user changes search field
       // and do nothing otherwise
@@ -254,7 +347,7 @@ class ReferenceChapter {
                   depth.next(), locale, e as Map<String, dynamic>))
               .toList() ??
           [],
-    )..bold = json['bold'] as bool? ?? false;
+    );
   }
 }
 
@@ -316,7 +409,9 @@ class _ReferenceState extends State<Reference>
     // Check if loading already works asynchronously
     if (_loading) return;
     // Schedule JSON loading
-    this._loading = true;
+    setState(() {
+      this._loading = true;
+    });
 
     SchedulerBinding.instance.addPostFrameCallback((_) async {
       Directory documents = await getApplicationDocumentsDirectory();
@@ -324,8 +419,10 @@ class _ReferenceState extends State<Reference>
           await File(p.join(documents.path, "reference.json")).readAsString();
       final ref = ReferenceData.fromJson(widget.ui.locale, jsonString);
 
-      this._loading = false;
-      setState(() => this._reference = ref);
+      setState(() {
+        this._loading = false;
+        this._reference = ref;
+      });
     });
   }
 
