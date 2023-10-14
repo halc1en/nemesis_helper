@@ -29,7 +29,7 @@ Interactive player aid for Nemesis board game
 - [x] Filtering reference entries
 - [x] JSON with hierarchy
 - [x] Inline markup in JSON for bold, italic
-- [ ] Hyperlinks in JSON ("id" field and inline links to it)
+- [x] Hyperlinks in JSON ("id" field and inline links to it)
 - [ ] Lists in JSON with modifiable icon
 
 ## Game session 

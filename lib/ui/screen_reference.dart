@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:nemesis_helper/ui/settings.dart';
 
+typedef LinkTapCallback = void Function(String);
+
 @immutable
 class Nesting {
   const Nesting() : _depth = 0;
@@ -68,75 +70,114 @@ class TextFmtRange {
     this.bold = false,
     this.italic = false,
     this.highlight = false,
+    this.link,
   }) : assert(start >= 0);
 
   final int start;
   bool bold;
   bool italic;
   bool highlight;
+  String? link;
 
   TextFmtRange clone() {
     return TextFmtRange(this.start,
-        bold: this.bold, italic: this.italic, highlight: this.highlight);
+        bold: this.bold,
+        italic: this.italic,
+        highlight: this.highlight,
+        link: this.link);
   }
 }
 
 class ReferenceChapter {
-  ReferenceChapter(
-      {required String? text, required this.depth, required this.nested})
-      : formatNoHighlight = [] {
-    bool bold = false, italic = false;
+  // This chapter's text
+  String? text;
 
-    int cursor = 0;
-    this.text = text?.splitMapJoin(RegExp(r'\\\*|\*\*|\*', unicode: true),
-        onMatch: (m) {
+  // Nested chapters
+  final List<ReferenceChapter> nested;
+
+  // This chapter's id and key (for hyperlinks to it)
+  final String? id;
+  final GlobalKey key = GlobalKey();
+
+  // This chapter's format without search field highlight
+  final List<TextFmtRange> formatNoHighlight = [];
+
+  // Nesting level in JSON
+  final Nesting depth;
+
+  ExpansionTileController? expansionController;
+
+  static final RegExp specialRegex =
+      RegExp(r'\\\*|\\\]|\\\[|\[(.*?[^\\])\]\((.+?)\)|\*\*|\*', unicode: true);
+
+  // Parse [text] and return the resulting string.
+  // Save all found formatting hints to [this.formatNoHighlight]
+  // Special characters:
+  //  **bold text**
+  //  *italic text*
+  //  [link text](link URL)
+  String parseJsonString(String text,
+      {int cursor = 0, bool bold = false, bool italic = false, String? link}) {
+    void saveFormatting() {
+      this
+          .formatNoHighlight
+          .add(TextFmtRange(cursor, bold: bold, italic: italic, link: link));
+    }
+
+    return text.splitMapJoin(ReferenceChapter.specialRegex, onMatch: (m) {
       switch (m[0]) {
-        case "\\*":
+        case r"\*":
+        case r"\]":
+        case r"\[":
           cursor += 1;
-          return "*";
+          return m[0]![1];
         case "**":
           bold = !bold;
+          saveFormatting();
           return "";
         case "*":
           italic = !italic;
+          saveFormatting();
           return "";
         default:
+          if (m[0]![0] == "[") {
+            link = m[2];
+            saveFormatting();
+
+            final parsedLinkText = parseJsonString(m[1] ?? "",
+                cursor: cursor, bold: bold, italic: italic, link: link);
+
+            cursor += parsedLinkText.length;
+            link = null;
+            saveFormatting();
+
+            return parsedLinkText;
+          }
           assert(false);
           return "";
       }
     }, onNonMatch: (n) {
-      this
-          .formatNoHighlight
-          .add(TextFmtRange(cursor, bold: bold, italic: italic));
       cursor += n.length;
       return n;
     });
   }
 
+  ReferenceChapter(
+      {required String? text,
+      required this.id,
+      required this.depth,
+      required this.nested}) {
+    if (text != null) this.text = parseJsonString(text);
+  }
+
   static const Indentation = 12.0;
-
-  // This chapter's text
-  String? text;
-
-  // This chapter's format without search field highlight
-  List<TextFmtRange> formatNoHighlight;
-
-  // Nesting level in JSON
-  Nesting depth;
-
-  // Nested chapters
-  List<ReferenceChapter> nested;
-
-  ExpansionTileController? expansionController;
 
   // Update [format] by changing highlight to passed [highlight] value
   // starting at [cursor]
   void updateFormatWithHighlight(List<TextFmtRange> format, int cursor,
       {required bool highlight}) {
-    final int prevIndex;
-    try {
-      prevIndex = format.lastIndexWhere((s) => s.start <= cursor);
-    } catch (_) {
+    final int prevIndex = format.lastIndexWhere((s) => s.start <= cursor);
+    if (prevIndex < 0) {
       format.insert(0, TextFmtRange(cursor));
       return;
     }
@@ -163,12 +204,12 @@ class ReferenceChapter {
   //  - highlighting [regex] matches
   //  - formatting according to [this.format]
   //
-  // Returns rendered [InlineSpan] and whether [regex] matches
-  (InlineSpan, bool) renderText(
-      BuildContext context, List<InlineSpan>? nestedSpans, RegExp? regex) {
+  // Returns rendered [InlineSpan] and whether [regex]/[jumpTo] matches it
+  (InlineSpan, bool) renderText(BuildContext context,
+      List<InlineSpan>? nestedSpans, RegExp? regex, LinkTapCallback onLinkTap) {
     final text = this.text;
 
-    // Shortcut for the simplest case of plain text or no text
+    // Shortcut for the simplest cases of plain text or no text
     if (text == null || regex == null && this.formatNoHighlight.isEmpty) {
       return (
         TextSpan(
@@ -199,24 +240,51 @@ class ReferenceChapter {
     }
 
     // And render those matches using [TextSpan]
-    final textStyle = this.depth.textStyle(context);
+    final nestingStyle = this.depth.textStyle(context);
     final highlightColor = Color.lerp(
-        textStyle.color ??
-            textStyle.foreground?.color ??
+        nestingStyle.color ??
+            nestingStyle.foreground?.color ??
             Theme.of(context).colorScheme.background,
         Colors.black,
         0.6);
-    final highlightSpans = <TextSpan>[];
+    final highlightSpans = <InlineSpan>[];
     void addSpan(String text,
         {required TextFmtRange fmt, List<InlineSpan>? children}) {
-      highlightSpans.add(TextSpan(
-        text: text,
-        style: textStyle.copyWith(
-            fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
-            fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
-            backgroundColor: fmt.highlight ? highlightColor : null),
-        children: children,
-      ));
+      final InlineSpan span;
+      final textStyle = nestingStyle.copyWith(
+          fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
+          fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
+          backgroundColor: fmt.highlight ? highlightColor : null);
+
+      final link = fmt.link;
+      if (link == null) {
+        // No hyperlinks - just render the text
+        span = TextSpan(text: text, style: textStyle, children: children);
+      } else {
+        // Use hyperlink style and capture finger taps/mouse clicks
+        span = WidgetSpan(
+          baseline: TextBaseline.alphabetic,
+          alignment: PlaceholderAlignment.baseline,
+          child: GestureDetector(
+            onTap: () async {
+              onLinkTap(link);
+            },
+            child: Text.rich(
+              TextSpan(
+                text: text,
+                style: textStyle.copyWith(
+                  color: Colors.lightBlue,
+                  decorationColor: Colors.lightBlue,
+                  decoration: TextDecoration.underline,
+                ),
+                children: children,
+              ),
+            ),
+          ),
+        );
+      }
+
+      highlightSpans.add(span);
     }
 
     TextFmtRange prevFmt = TextFmtRange(0);
@@ -232,17 +300,20 @@ class ReferenceChapter {
 
   // Render this chapter as [InlineSpan] suitable for
   // embedding into [RichText] widget.
-  (InlineSpan, bool) recurseSpan(BuildContext context, RegExp? regex) {
+  (InlineSpan, bool) recurseSpan(
+      BuildContext context, RegExp? regex, LinkTapCallback onLinkTap) {
     // Recursively walk children
-    var (nestedSpans, nestedMatchesRegex) = this
+    var (nestedSpans, nestedMatches) = this
         .nested
-        .map((ReferenceChapter child) => child.recurseSpan(context, regex))
+        .map((ReferenceChapter child) =>
+            child.recurseSpan(context, regex, onLinkTap))
         .fold<(List<InlineSpan>?, bool)>((null, false), (prev, element) {
       return ((prev.$1 ?? [])..add(element.$1), prev.$2 || element.$2);
     });
 
     // Render this node with children
-    var (span, thisMatchesRegex) = renderText(context, nestedSpans, regex);
+    var (span, thisMatches) =
+        renderText(context, nestedSpans, regex, onLinkTap);
 
     // Add indentation for comments
     if (this.depth.isComment()) {
@@ -255,31 +326,32 @@ class ReferenceChapter {
       );
     }
 
-    return (span, nestedMatchesRegex || thisMatchesRegex);
+    return (span, nestedMatches || thisMatches);
   }
 
   // Render this chapter as widget
-  (Widget, bool) recurseWidget(
-      BuildContext context, RegExp? regex, bool forceExpandCollapse) {
+  (Widget, bool) recurseWidget(BuildContext context, RegExp? regex,
+      bool forceExpandCollapse, LinkTapCallback onLinkTap) {
     final List<Widget> widgets;
-    bool nestedMatchesRegex;
+    bool nestedMatches;
 
     // Recursively walk children
     if (depth.next().isCollapsible()) {
       // Use [ExpansionTile] for collapsible chapters
-      (widgets, nestedMatchesRegex) = this
+      (widgets, nestedMatches) = this
           .nested
-          .map((ReferenceChapter child) =>
-              child.recurseWidget(context, regex, forceExpandCollapse))
+          .map((ReferenceChapter child) => child.recurseWidget(
+              context, regex, forceExpandCollapse, onLinkTap))
           .fold<(List<Widget>, bool)>(([], false), (prev, element) {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
     } else {
       // Otherwise use [RichText]
       final List<InlineSpan> nestedSpans;
-      (nestedSpans, nestedMatchesRegex) = this
+      (nestedSpans, nestedMatches) = this
           .nested
-          .map((ReferenceChapter child) => child.recurseSpan(context, regex))
+          .map((ReferenceChapter child) =>
+              child.recurseSpan(context, regex, onLinkTap))
           .fold<(List<InlineSpan>, bool)>(([], false), (prev, element) {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
@@ -303,36 +375,34 @@ class ReferenceChapter {
     if (text == null) {
       return (
         Container(
+            key: key,
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Column(children: widgets)),
-        nestedMatchesRegex
+        nestedMatches
       );
     } else {
-      final (span, thisMatchesRegex) = renderText(context, null, regex);
+      final (span, thisMatches) = renderText(context, null, regex, onLinkTap);
 
       // Force expanding and collapsing when user changes search field
       // and do nothing otherwise
-      final expanded =
-          (regex == null || nestedMatchesRegex || thisMatchesRegex);
-      if (forceExpandCollapse) {
-        if (expanded) {
-          this.expansionController?.expand();
-        } else {
-          this.expansionController?.collapse();
-        }
+      if (forceExpandCollapse && (nestedMatches || thisMatches)) {
+        this.expansionController?.expand();
+      } else if (forceExpandCollapse && !nestedMatches && !thisMatches) {
+        this.expansionController?.collapse();
       }
       this.expansionController ??= ExpansionTileController();
 
       return (
         ExpansionTile(
+          key: key,
           controller: this.expansionController,
-          initiallyExpanded: expanded,
+          initiallyExpanded: true,
           maintainState: true,
           tilePadding: const EdgeInsets.symmetric(horizontal: 4),
           title: Text.rich(span),
           children: widgets,
         ),
-        nestedMatchesRegex || thisMatchesRegex
+        nestedMatches || thisMatches
       );
     }
   }
@@ -341,6 +411,7 @@ class ReferenceChapter {
       Nesting depth, Locale? locale, Map<String, dynamic> json) {
     return ReferenceChapter(
       text: json['text_${locale?.languageCode ?? "en"}'] as String?,
+      id: json['id'] as String?,
       depth: depth,
       nested: (json['nested'] as List<dynamic>?)
               ?.map((e) => ReferenceChapter.fromJson(
@@ -348,6 +419,20 @@ class ReferenceChapter {
               .toList() ??
           [],
     );
+  }
+
+  bool jumpToChapter(String chapterId) {
+    bool found = (this.id == chapterId.substring(1) ||
+        this.nested.any((chapter) => chapter.jumpToChapter(chapterId)));
+
+    if (found) {
+      this.expansionController?.expand();
+
+      final thisContext = this.key.currentContext;
+      if (thisContext != null) Scrollable.ensureVisible(thisContext);
+    }
+
+    return found;
   }
 }
 
@@ -358,12 +443,18 @@ class ReferenceData {
   ReferenceData({required this.locale, required this.nested});
 
   List<Widget> show(
-      BuildContext context, RegExp? regex, bool forceExpandCollapse) {
+      BuildContext context, RegExp? regex, bool forceExpandCollapse,
+      {required LinkTapCallback onLinkTap}) {
     return this
         .nested
-        .map((child) =>
-            child.recurseWidget(context, regex, forceExpandCollapse).$1)
+        .map((child) => child
+            .recurseWidget(context, regex, forceExpandCollapse, onLinkTap)
+            .$1)
         .toList();
+  }
+
+  void jumpToChapter(String chapterId) {
+    nested.any((chapter) => chapter.jumpToChapter(chapterId));
   }
 
   factory ReferenceData.fromJson(Locale? locale, String jsonString) {
@@ -389,6 +480,7 @@ class _ReferenceState extends State<Reference>
     with AutomaticKeepAliveClientMixin<Reference> {
   ReferenceData? _reference;
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   bool _loading = false;
   RegExp? _regex;
   bool _forceExpandCollapse = false;
@@ -448,7 +540,12 @@ class _ReferenceState extends State<Reference>
             hintText: AppLocalizations.of(context).searchHint,
             prefixIcon: const Icon(Icons.search),
             suffixIcon: IconButton(
-              onPressed: this._searchController.clear,
+              onPressed: () {
+                this._searchController.clear();
+                setState(() {
+                  this._regex = null;
+                });
+              },
               icon: const Icon(Icons.clear),
             ),
           ),
@@ -466,15 +563,22 @@ class _ReferenceState extends State<Reference>
               } catch (_) {}
             } else if (this._regex != null) {
               setState(() {
-                this._forceExpandCollapse = true;
                 this._regex = null;
               });
             }
           },
         ),
         Expanded(
-            child: ListView(
-                children: ref.show(context, this._regex, forceExpandCollapse))),
+          child: SingleChildScrollView(
+            restorationId: "reference_scroll_offset",
+            controller: this._scrollController,
+            child: Column(
+              children: ref.show(context, this._regex, forceExpandCollapse,
+                  onLinkTap: (String jumpTo) =>
+                      _reference?.jumpToChapter(jumpTo)),
+            ),
+          ),
+        ),
       ],
     );
   }
