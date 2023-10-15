@@ -14,6 +14,7 @@ class Nesting {
   // First 3 levels are for headers and next 2 for body
   final int _depth;
 
+  // Cached styles for faster retrieval
   static List<TextStyle>? _styles;
 
   // Headers do not take part in multi-paragraph search
@@ -55,6 +56,16 @@ class Nesting {
     }
 
     return Nesting._styles![this._depth.clamp(0, Nesting._styles!.length - 1)];
+  }
+
+  Color? highlightColor(BuildContext context) {
+    final nestingStyle = this.textStyle(context);
+    return Color.lerp(
+        nestingStyle.color ??
+            nestingStyle.foreground?.color ??
+            Theme.of(context).colorScheme.background,
+        Colors.black,
+        0.6);
   }
 }
 
@@ -207,7 +218,10 @@ class ReferenceChapter {
     if (text == null || regex == null && this.formatNoHighlight.isEmpty) {
       return (
         TextSpan(
-          text: text,
+          // Insert newline between different nesting levels
+          text: (text != null && (nestedSpans?.isNotEmpty ?? false))
+              ? "$text\n"
+              : text,
           style: this.depth.textStyle(context),
           children: nestedSpans,
         ),
@@ -234,62 +248,71 @@ class ReferenceChapter {
     }
 
     // And render those matches using [TextSpan]
-    final nestingStyle = this.depth.textStyle(context);
-    final highlightColor = Color.lerp(
-        nestingStyle.color ??
-            nestingStyle.foreground?.color ??
-            Theme.of(context).colorScheme.background,
-        Colors.black,
-        0.6);
     final highlightSpans = <InlineSpan>[];
-    void addSpan(String text,
-        {required TextFmtRange fmt, List<InlineSpan>? children}) {
-      final InlineSpan span;
-      final textStyle = nestingStyle.copyWith(
-          fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
-          backgroundColor: fmt.highlight ? highlightColor : null);
-
-      final link = fmt.link;
-      if (link == null) {
-        // No hyperlinks - just render the text
-        span = TextSpan(text: text, style: textStyle, children: children);
-      } else {
-        // Use hyperlink style and capture finger taps/mouse clicks
-        span = WidgetSpan(
-          baseline: TextBaseline.alphabetic,
-          alignment: PlaceholderAlignment.baseline,
-          child: GestureDetector(
-            onTap: () async {
-              onLinkTap(link);
-            },
-            child: Text.rich(
-              TextSpan(
-                text: text,
-                style: textStyle.copyWith(
-                  color: Colors.lightBlue,
-                  decorationColor: Colors.lightBlue,
-                  decoration: TextDecoration.underline,
-                ),
-                children: children,
-              ),
-            ),
-          ),
-        );
-      }
-
-      highlightSpans.add(span);
-    }
 
     TextFmtRange prevFmt = TextFmtRange(0);
     for (final fmt in format) {
-      addSpan(text.substring(prevFmt.start, fmt.start), fmt: prevFmt);
+      highlightSpans.add(_renderSingleSpan(context,
+          text.substring(prevFmt.start, fmt.start), prevFmt, onLinkTap));
       prevFmt = fmt;
     }
     // Show nested spans after the end of [this.text]
-    addSpan(text.substring(prevFmt.start), fmt: prevFmt, children: nestedSpans);
+    highlightSpans.add(_renderSingleSpan(
+        context, text.substring(prevFmt.start), prevFmt, onLinkTap,
+        children: nestedSpans));
 
     return (TextSpan(children: highlightSpans), matches);
+  }
+
+  // Render a single part of [this.text] that has the same formatting [fmt];
+  // this is a building block of rendering [this.text]
+  InlineSpan _renderSingleSpan(BuildContext context, String text,
+      TextFmtRange fmt, LinkTapCallback onLinkTap,
+      {List<InlineSpan>? children}) {
+    final InlineSpan span;
+    final highlightColor = this.depth.highlightColor(context);
+    final textStyle = this.depth.textStyle(context).copyWith(
+        fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
+        backgroundColor: fmt.highlight ? highlightColor : null);
+
+    final link = fmt.link;
+    if (link == null) {
+      // No hyperlinks - just render the text
+      span = TextSpan(
+          // Insert newline between different nesting levels
+          text: (children != null) ? "$text\n" : text,
+          style: textStyle,
+          children: children);
+    } else {
+      // Use hyperlink style and capture finger taps/mouse clicks
+      span = WidgetSpan(
+        baseline: TextBaseline.alphabetic,
+        alignment: PlaceholderAlignment.baseline,
+        child: GestureDetector(
+          onTap: () async {
+            onLinkTap(link);
+          },
+          child: Text.rich(
+            TextSpan(
+              // Insert newline between different nesting levels
+              text: (children != null) ? "$text\n" : text,
+              style: textStyle.copyWith(
+                color: Colors.lightBlue,
+                decorationColor: Colors.lightBlue,
+                decoration: TextDecoration.underline,
+                decorationThickness: 1.5,
+              ),
+              children: children,
+            ),
+            // Workaround for https://github.com/flutter/flutter/issues/126962
+            textScaleFactor: 1,
+          ),
+        ),
+      );
+    }
+
+    return span;
   }
 
   // Render this chapter as [InlineSpan] suitable for
@@ -340,7 +363,7 @@ class ReferenceChapter {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
     } else {
-      // Otherwise use [RichText]
+      // Otherwise use [Text.rich]
       final List<InlineSpan> nestedSpans;
       (nestedSpans, nestedMatches) = this
           .nested
@@ -401,19 +424,6 @@ class ReferenceChapter {
     }
   }
 
-  factory ReferenceChapter.fromJson(Nesting depth, Map<String, dynamic> json) {
-    return ReferenceChapter(
-      text: json['text'] as String?,
-      id: json['id'] as String?,
-      depth: depth,
-      nested: (json['nested'] as List<dynamic>?)
-              ?.map((e) => ReferenceChapter.fromJson(
-                  depth.next(), e as Map<String, dynamic>))
-              .toList() ??
-          [],
-    );
-  }
-
   bool jumpToChapter(String chapterId) {
     bool found = (this.id == chapterId.substring(1) ||
         this.nested.any((chapter) => chapter.jumpToChapter(chapterId)));
@@ -436,6 +446,21 @@ class ReferenceChapter {
     }
 
     return found;
+  }
+
+  factory ReferenceChapter.fromJson(Nesting depth, Map<String, dynamic> json) {
+    final jsonText = json['text'];
+
+    return ReferenceChapter(
+      text: (jsonText is List) ? jsonText.join('\n') : (jsonText as String?),
+      id: json['id'] as String?,
+      depth: depth,
+      nested: (json['nested'] as List<dynamic>?)
+              ?.map((e) => ReferenceChapter.fromJson(
+                  depth.next(), e as Map<String, dynamic>))
+              .toList() ??
+          [],
+    );
   }
 }
 
