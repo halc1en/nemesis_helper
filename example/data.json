@@ -1,0 +1,11 @@
+{
+    "languages": [
+        "en",
+        "ru"
+    ],
+    "modules": [
+        {
+            "name": "base"
+        }
+    ]
+}
