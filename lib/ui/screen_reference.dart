@@ -289,24 +289,27 @@ class ReferenceChapter {
       span = WidgetSpan(
         baseline: TextBaseline.alphabetic,
         alignment: PlaceholderAlignment.baseline,
-        child: GestureDetector(
-          onTap: () async {
-            onLinkTap(link);
-          },
-          child: Text.rich(
-            TextSpan(
-              // Insert newline between different nesting levels
-              text: (children != null) ? "$text\n" : text,
-              style: textStyle.copyWith(
-                color: Colors.lightBlue,
-                decorationColor: Colors.lightBlue,
-                decoration: TextDecoration.underline,
-                decorationThickness: 1.5,
+        style: textStyle.copyWith(
+          decorationColor: Colors.lightBlue,
+          decoration: TextDecoration.underline,
+          decorationThickness: 1.5,
+        ),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: () async {
+              onLinkTap(link);
+            },
+            child: Text.rich(
+              TextSpan(
+                // Insert newline between different nesting levels
+                text: (children != null) ? "$text\n" : text,
+                style: textStyle.copyWith(color: Colors.lightBlue),
+                children: children,
               ),
-              children: children,
+              // Workaround for https://github.com/flutter/flutter/issues/126962
+              textScaleFactor: 1,
             ),
-            // Workaround for https://github.com/flutter/flutter/issues/126962
-            textScaleFactor: 1,
           ),
         ),
       );

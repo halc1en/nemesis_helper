@@ -191,7 +191,7 @@ class _AppLoaderState extends State<AppLoader> {
             // Reload data if user selects another language
             updateJsonFromFile();
 
-            return App(ui);
+            return _App(ui);
           }),
         );
       }),
@@ -199,26 +199,16 @@ class _AppLoaderState extends State<AppLoader> {
   }
 }
 
-class App extends StatefulWidget {
-  const App(this.ui, {super.key});
+class _App extends StatelessWidget {
+  const _App(this.ui, {super.key});
 
   final UISettings ui;
-
-  @override
-  State<App> createState() => _AppState();
-}
-
-class _AppState extends State<App> {
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      initialIndex: widget.ui.tabIndex,
+      initialIndex: ui.tabIndex,
       child: SafeArea(
         child: Scaffold(
           bottomNavigationBar: Builder(builder: (context) {
@@ -231,7 +221,7 @@ class _AppState extends State<App> {
                     child: TabBar(
                       labelPadding: const EdgeInsets.all(3.0),
                       onTap: (int index) {
-                        widget.ui.tabIndex = index;
+                        ui.tabIndex = index;
                       },
                       indicatorSize: TabBarIndicatorSize.tab,
                       indicatorWeight: 3.0,
@@ -281,7 +271,7 @@ class _AppState extends State<App> {
             return TabBarView(children: [
               Consumer<JsonData?>(
                 builder: (context, jsonData, _) =>
-                    Reference(ui: widget.ui, reference: jsonData?.reference),
+                    Reference(ui: ui, reference: jsonData?.reference),
               ),
               const SizedBox.shrink(),
             ]);
