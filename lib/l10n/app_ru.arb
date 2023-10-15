@@ -7,6 +7,7 @@
     "playSession": "Игровая сессия",
 
     "settings": "НАСТРОЙКИ",
+    "modules": "Модули: ",
     "language": "Язык: ",
     "languageSystem": "системный",
     "scaleDescription": "Установить размер текста и элементов в приложении",

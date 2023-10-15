@@ -40,6 +40,9 @@ dependencies:
   # App state management
   provider: ^6.0.5
 
+  # For Duration helpers
+  quiver: ^3.0.1
+
   # Save current UI position in case app is temporarily killed to save memory
   shared_preferences: ^2.2.1
 

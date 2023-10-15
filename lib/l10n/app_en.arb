@@ -7,6 +7,7 @@
     "playSession": "Play session",
 
     "settings": "SETTINGS",
+    "modules": "Modules: ",
     "language": "Language: ",
     "languageSystem": "System",
     "scaleDescription": "Set text scale across the whole application",

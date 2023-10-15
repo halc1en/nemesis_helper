@@ -1,14 +1,8 @@
-// ignore_for_file: public_member_api_docs, sort_constructors_first
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:quiver/time.dart';
 
-import 'package:nemesis_helper/ui/settings.dart';
+import 'package:nemesis_helper/model/settings.dart';
 
 typedef LinkTapCallback = void Function(String);
 
@@ -89,6 +83,14 @@ class TextFmtRange {
 }
 
 class ReferenceChapter {
+  ReferenceChapter(
+      {required String? text,
+      required this.id,
+      required this.depth,
+      required this.nested}) {
+    if (text != null) this.text = parseJsonString(text);
+  }
+
   // This chapter's text
   String? text;
 
@@ -160,14 +162,6 @@ class ReferenceChapter {
       cursor += n.length;
       return n;
     });
-  }
-
-  ReferenceChapter(
-      {required String? text,
-      required this.id,
-      required this.depth,
-      required this.nested}) {
-    if (text != null) this.text = parseJsonString(text);
   }
 
   static const Indentation = 12.0;
@@ -407,15 +401,14 @@ class ReferenceChapter {
     }
   }
 
-  factory ReferenceChapter.fromJson(
-      Nesting depth, Locale? locale, Map<String, dynamic> json) {
+  factory ReferenceChapter.fromJson(Nesting depth, Map<String, dynamic> json) {
     return ReferenceChapter(
-      text: json['text_${locale?.languageCode ?? "en"}'] as String?,
+      text: json['text'] as String?,
       id: json['id'] as String?,
       depth: depth,
       nested: (json['nested'] as List<dynamic>?)
               ?.map((e) => ReferenceChapter.fromJson(
-                  depth.next(), locale, e as Map<String, dynamic>))
+                  depth.next(), e as Map<String, dynamic>))
               .toList() ??
           [],
     );
@@ -429,18 +422,28 @@ class ReferenceChapter {
       this.expansionController?.expand();
 
       final thisContext = this.key.currentContext;
-      if (thisContext != null) Scrollable.ensureVisible(thisContext);
+      if (thisContext != null) {
+        // Wait for 220 ms for expand() to finish (add a bit to
+        // expansion time to avoid overshooting)
+        for (var i = 0; i <= 220; i += 20) {
+          Future.delayed(aMillisecond * (220 - i), () {
+            Scrollable.ensureVisible(thisContext,
+                curve: Curves.linear, duration: aMillisecond * 50);
+            return const SizedBox.shrink();
+          });
+        }
+      }
     }
 
     return found;
   }
 }
 
+@immutable
 class ReferenceData {
-  final Locale? locale;
   final List<ReferenceChapter> nested;
 
-  ReferenceData({required this.locale, required this.nested});
+  const ReferenceData({required this.nested});
 
   List<Widget> show(
       BuildContext context, RegExp? regex, bool forceExpandCollapse,
@@ -457,20 +460,20 @@ class ReferenceData {
     nested.any((chapter) => chapter.jumpToChapter(chapterId));
   }
 
-  factory ReferenceData.fromJson(Locale? locale, String jsonString) {
+  factory ReferenceData.fromJson(Map<String, dynamic> json) {
     return ReferenceData(
-        locale: locale,
-        nested: (jsonDecode(jsonString) as List<dynamic>)
+        nested: (json['reference'] as List<dynamic>? ?? [])
             .map<ReferenceChapter>((json) => ReferenceChapter.fromJson(
-                const Nesting(), locale, json as Map<String, dynamic>))
+                const Nesting(), json as Map<String, dynamic>))
             .toList());
   }
 }
 
 class Reference extends StatefulWidget {
-  const Reference({super.key, required this.ui});
+  const Reference({super.key, required this.ui, required this.reference});
 
   final UISettings ui;
+  final ReferenceData? reference;
 
   @override
   State<Reference> createState() => _ReferenceState();
@@ -478,10 +481,8 @@ class Reference extends StatefulWidget {
 
 class _ReferenceState extends State<Reference>
     with AutomaticKeepAliveClientMixin<Reference> {
-  ReferenceData? _reference;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  bool _loading = false;
   RegExp? _regex;
   bool _forceExpandCollapse = false;
 
@@ -489,44 +490,10 @@ class _ReferenceState extends State<Reference>
   bool get wantKeepAlive => true;
 
   @override
-  void initState() {
-    updateJsonFromFile();
-    super.initState();
-  }
-
-  void updateJsonFromFile() {
-    // Nothing to reload if locale has not changed
-    if (_reference != null && _reference?.locale == widget.ui.locale) return;
-
-    // Check if loading already works asynchronously
-    if (_loading) return;
-    // Schedule JSON loading
-    setState(() {
-      this._loading = true;
-    });
-
-    SchedulerBinding.instance.addPostFrameCallback((_) async {
-      Directory documents = await getApplicationDocumentsDirectory();
-      final jsonString =
-          await File(p.join(documents.path, "reference.json")).readAsString();
-      final ref = ReferenceData.fromJson(widget.ui.locale, jsonString);
-
-      setState(() {
-        this._loading = false;
-        this._reference = ref;
-      });
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     super.build(context);
 
-    // Since we got here something in Provider (i.e. UISettings)
-    // has changed, reload JSON
-    updateJsonFromFile();
-
-    final ref = this._reference;
+    final ref = widget.reference;
     if (ref == null) return const Center(child: CircularProgressIndicator());
 
     final forceExpandCollapse = this._forceExpandCollapse;
@@ -575,7 +542,7 @@ class _ReferenceState extends State<Reference>
             child: Column(
               children: ref.show(context, this._regex, forceExpandCollapse,
                   onLinkTap: (String jumpTo) =>
-                      _reference?.jumpToChapter(jumpTo)),
+                      widget.reference?.jumpToChapter(jumpTo)),
             ),
           ),
         ),
