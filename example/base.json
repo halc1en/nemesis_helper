@@ -1,3 +1,15 @@
 {
-    "default": true
+    "default": true,
+    "icons": [
+        {
+            "id": "icon_computer",
+            "name": "computer.png"
+        }
+    ],
+    "images": [
+        {
+            "id": "image_objectives",
+            "name": "objectives.png"
+        }
+    ]
 }

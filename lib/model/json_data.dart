@@ -1,7 +1,9 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+
 import 'package:nemesis_helper/ui/screen_reference.dart';
 
 @immutable
@@ -23,6 +25,7 @@ class JsonData extends ChangeNotifier {
     required this.supportedLanguages,
     required this.selectableModules,
     required this.reference,
+    required this.images,
   });
 
   // Selected language
@@ -36,6 +39,9 @@ class JsonData extends ChangeNotifier {
 
   // Reference to show
   final ReferenceData reference;
+
+  // Images being loaded
+  final Map<String, JsonImage> images;
 
   // Merges [from] json into [to]
   static void _deepMergeMap(
@@ -63,42 +69,25 @@ class JsonData extends ChangeNotifier {
     });
   }
 
-  static bool _findAndMergeList(
-      List<dynamic> to, Map<String, dynamic> from, String id) {
-    for (final value in to) {
-      if (value is Map) {
-        if (value['id'] == id) {
-          // Found! Do the merging
-          _deepMergeMap(value as Map<String, dynamic>, from);
-          return true;
-        }
-        if (_findAndMergeMap(value as Map<String, dynamic>, from, id)) {
-          return true;
-        }
-      } else if (value is List) {
-        if (_findAndMergeList(value, from, id)) return true;
-      }
-    }
-
-    return false;
-  }
-
   // Merges [from] json into [to] as _deepMergeMap() does, but start
   // from object [id]
-  static bool _findAndMergeMap(
-      Map<String, dynamic> to, Map<String, dynamic> from, String id) {
-    for (final value in to.values) {
+  static bool _findAndMerge(dynamic to, Map<String, dynamic> from, String id) {
+    for (final value in (to is List)
+        ? to
+        : (to is Map)
+            ? to.values
+            : []) {
       if (value is Map) {
         if (value['id'] == id) {
           // Found! Do the merging
           _deepMergeMap(value as Map<String, dynamic>, from);
           return true;
         }
-        if (_findAndMergeMap(value as Map<String, dynamic>, from, id)) {
+        if (_findAndMerge(value as Map<String, dynamic>, from, id)) {
           return true;
         }
       } else if (value is List) {
-        if (_findAndMergeList(value, from, id)) return true;
+        if (_findAndMerge(value, from, id)) return true;
       }
     }
 
@@ -106,12 +95,12 @@ class JsonData extends ChangeNotifier {
   }
 
   // Return 'true' on success
-  static Future<bool> loadAndApplyPatch(Map<String, dynamic> module,
+  static Future<bool> _loadAndApplyPatch(Map<String, dynamic> module,
       String patch, Future<dynamic> Function(String) loadAndDecode) async {
     final patchJson = await loadAndDecode(patch) as List<dynamic>?;
     if (patchJson == null) return false;
     for (final (patchedObject as Map<String, dynamic>) in patchJson) {
-      _findAndMergeMap(module, patchedObject, patchedObject['id'] as String);
+      _findAndMerge(module, patchedObject, patchedObject['id'] as String);
     }
     return true;
   }
@@ -122,17 +111,21 @@ class JsonData extends ChangeNotifier {
       Locale? locale,
       String jsonName,
       List<String>? selectedModules,
-      Future<String?> Function(String name) loadJson) async {
+      File? Function(String name) openFile) async {
     List<Module> selectableModules = [];
 
-    Future<dynamic> loadAndDecode(String jsonName) async {
-      final jsonString = await loadJson(jsonName);
-      if (jsonString == null) return null;
-      return jsonDecode(jsonString);
+    Future<dynamic> loadJsonAndDecode(String jsonName) async {
+      try {
+        final jsonString = await openFile("$jsonName.json")?.readAsString();
+        if (jsonString == null) return null;
+        return jsonDecode(jsonString);
+      } catch (_) {
+        return null;
+      }
     }
 
     // Parse main JSON file
-    final mainJson = await loadAndDecode(jsonName) as Map<String, dynamic>;
+    final mainJson = await loadJsonAndDecode(jsonName) as Map<String, dynamic>;
 
     // Get list of supported languages
     final supportedLanguages = (mainJson['languages'] as List<dynamic>)
@@ -145,8 +138,8 @@ class JsonData extends ChangeNotifier {
         : supportedLanguages.first;
 
     // Apply main JSON localization (with fallback to English)
-    final mainLocale = (await loadAndDecode("${jsonName}_$language") ??
-        await loadAndDecode("${jsonName}_en")) as Map<String, dynamic>?;
+    final mainLocale = (await loadJsonAndDecode("${jsonName}_$language") ??
+        await loadJsonAndDecode("${jsonName}_en")) as Map<String, dynamic>?;
     if (mainLocale != null) _deepMergeMap(mainJson, mainLocale);
 
     // Load each module and append to main json, merging and/or replacing same values
@@ -154,27 +147,29 @@ class JsonData extends ChangeNotifier {
         .map((m) => (m as Map<String, dynamic>)['name'] as String)) {
       // Load module with patches
       final module =
-          (await loadAndDecode(moduleName) as Map<String, dynamic>?) ?? {};
+          (await loadJsonAndDecode(moduleName) as Map<String, dynamic>?) ?? {};
 
       // Apply module patches
       for (final (patchName as String)
           in module['patches'] as List<dynamic>? ?? []) {
-        await loadAndApplyPatch(
-            module, "${moduleName}_$patchName", loadAndDecode);
+        await _loadAndApplyPatch(
+            module, "${moduleName}_$patchName", loadJsonAndDecode);
       }
 
       // Apply module localization with patches (with fallback to English)
-      final moduleLocale = (await loadAndDecode("${moduleName}_$language") ??
-          await loadAndDecode("${moduleName}_en")) as Map<String, dynamic>?;
+      final moduleLocale =
+          (await loadJsonAndDecode("${moduleName}_$language") ??
+                  await loadJsonAndDecode("${moduleName}_en"))
+              as Map<String, dynamic>?;
       if (moduleLocale != null) {
         _deepMergeMap(module, moduleLocale);
 
         for (final (patchName as String)
             in moduleLocale['patches'] as List<dynamic>? ?? []) {
-          await loadAndApplyPatch(module,
-                  "${moduleName}_${language}_$patchName", loadAndDecode) ||
-              await loadAndApplyPatch(
-                  module, "${moduleName}_en_$patchName", loadAndDecode);
+          await _loadAndApplyPatch(module,
+                  "${moduleName}_${language}_$patchName", loadJsonAndDecode) ||
+              await _loadAndApplyPatch(
+                  module, "${moduleName}_en_$patchName", loadJsonAndDecode);
         }
       }
 
@@ -196,11 +191,53 @@ class JsonData extends ChangeNotifier {
       }
     }
 
+    MapEntry<String, JsonImage>? parseJsonImage(
+        Map<String, dynamic> image, bool icon) {
+      try {
+        return MapEntry(
+            image['id'] as String,
+            JsonImage(
+                icon: icon,
+                provider: FileImage(openFile(image['name'] as String)!)));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final images = <String, JsonImage>{};
+    images.addEntries((mainJson['icons'] as List<dynamic>?)
+            ?.map((icon) => icon as Map<String, dynamic>)
+            .map((icon) => parseJsonImage(icon, true))
+            .nonNulls ??
+        []);
+    images.addEntries((mainJson['images'] as List<dynamic>?)
+            ?.map((icon) => icon as Map<String, dynamic>)
+            .map((icon) => parseJsonImage(icon, false))
+            .nonNulls ??
+        []);
+
     // Parse the resulting JSON
     return JsonData(
         currentLanguage: language,
         supportedLanguages: supportedLanguages,
         selectableModules: selectableModules,
-        reference: ReferenceData.fromJson(mainJson));
+        reference: ReferenceData.fromJson(
+          mainJson,
+          images,
+        ),
+        images: images);
   }
+}
+
+class JsonImage {
+  const JsonImage({
+    required this.provider,
+    required this.icon,
+  });
+
+  // Provider to load the image
+  final ImageProvider provider;
+
+  // Set to render with same height as text
+  final bool icon;
 }

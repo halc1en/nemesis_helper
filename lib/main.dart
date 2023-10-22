@@ -84,17 +84,16 @@ class _AppLoaderState extends State<AppLoader> {
       });
 
       Directory documents = await getApplicationDocumentsDirectory();
-      Future<String?> loadJson(String name) async {
+      File? openFile(String name) {
         try {
-          return await File(p.join(documents.path, "$name.json"))
-              .readAsString();
+          return File(p.join(documents.path, name));
         } catch (_) {
           return null;
         }
       }
 
       final jsonData = await JsonData.fromJson(
-          this._ui.locale, "data", this._ui.selectedModules, loadJson);
+          this._ui.locale, "data", this._ui.selectedModules, openFile);
 
       // Update modules list for settings screen
       if (this._ui.selectedModules == null) {

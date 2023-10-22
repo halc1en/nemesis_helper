@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:nemesis_helper/model/json_data.dart';
 import 'package:quiver/time.dart';
 
 import 'package:nemesis_helper/model/settings.dart';
 
 typedef LinkTapCallback = void Function(String);
+typedef LoadImageCallback = JsonImage? Function(String);
 
 @immutable
 class Nesting {
@@ -14,8 +16,9 @@ class Nesting {
   // First 3 levels are for headers and next 2 for body
   final int _depth;
 
-  // Cached styles for faster retrieval
+  // Cached styles/sizes for faster retrieval
   static List<TextStyle>? _styles;
+  static List<double>? _heights;
 
   // Headers do not take part in multi-paragraph search
   bool isHeader() => this._depth <= 2;
@@ -30,6 +33,38 @@ class Nesting {
 
   // Get text style for each of 0 to 4 allowed nesting depths in JSON
   TextStyle textStyle(BuildContext context) {
+    _initStyles(context);
+    return Nesting._styles![this._depth.clamp(0, Nesting._styles!.length - 1)];
+  }
+
+  double textHeight(BuildContext context) {
+    if (Nesting._heights == null) {
+      _initStyles(context);
+      Nesting._heights = Nesting._styles!
+          .map((style) => TextPainter(
+                text: TextSpan(text: "T", style: style),
+                maxLines: 1,
+                textDirection: TextDirection.ltr,
+              ))
+          .map((painter) => (painter..layout()).size.height)
+          .toList();
+    }
+
+    return Nesting
+        ._heights![this._depth.clamp(0, Nesting._heights!.length - 1)];
+  }
+
+  Color? highlightColor(BuildContext context) {
+    final nestingStyle = this.textStyle(context);
+    return Color.lerp(
+        nestingStyle.color ??
+            nestingStyle.foreground?.color ??
+            Theme.of(context).colorScheme.background,
+        Colors.black,
+        0.6);
+  }
+
+  void _initStyles(BuildContext context) {
     if (Nesting._styles == null) {
       final textTheme = Theme.of(context).textTheme;
       // These can't be null since they are explicitly initialized
@@ -54,18 +89,6 @@ class Nesting {
             fontSize: labelMedium.fontSize! * 1.1),
       ];
     }
-
-    return Nesting._styles![this._depth.clamp(0, Nesting._styles!.length - 1)];
-  }
-
-  Color? highlightColor(BuildContext context) {
-    final nestingStyle = this.textStyle(context);
-    return Color.lerp(
-        nestingStyle.color ??
-            nestingStyle.foreground?.color ??
-            Theme.of(context).colorScheme.background,
-        Colors.black,
-        0.6);
   }
 }
 
@@ -76,6 +99,7 @@ class TextFmtRange {
     this.italic = false,
     this.highlight = false,
     this.link,
+    this.image,
   }) : assert(start >= 0);
 
   final int start;
@@ -83,22 +107,38 @@ class TextFmtRange {
   bool italic;
   bool highlight;
   String? link;
+  String? image;
+
+  TextFmtRange copyWith({
+    int? start,
+    bool? bold,
+    bool? italic,
+    bool? highlight,
+    String? link,
+    String? image,
+  }) {
+    return TextFmtRange(
+      start ?? this.start,
+      bold: bold ?? this.bold,
+      italic: italic ?? this.italic,
+      highlight: highlight ?? this.highlight,
+      link: link ?? this.link,
+      image: image ?? this.image,
+    );
+  }
 
   TextFmtRange clone() {
-    return TextFmtRange(this.start,
-        bold: this.bold,
-        italic: this.italic,
-        highlight: this.highlight,
-        link: this.link);
+    return this.copyWith();
   }
 }
 
 class ReferenceChapter {
-  ReferenceChapter(
-      {required String? text,
-      required this.id,
-      required this.depth,
-      required this.nested}) {
+  ReferenceChapter({
+    required String? text,
+    required this.id,
+    required this.depth,
+    required this.nested,
+  }) {
     if (text != null) this.text = parseJsonString(text);
   }
 
@@ -120,8 +160,18 @@ class ReferenceChapter {
 
   ExpansionTileController? expansionController;
 
-  static final RegExp specialRegex =
-      RegExp(r'\\\*|\\\]|\\\[|\[(.*?[^\\])\]\((.+?)\)|\*\*|\*', unicode: true);
+  static final RegExp formattingRegex = RegExp(
+      // Escaping special characters
+      r'\\\*|\\\]|\\\[|\\!'
+      r'|'
+      // Inline images and icons
+      r'!\[(.*?[^\\]?)\]\((.+?)\)'
+      r'|'
+      // Links
+      r'\[(.*?[^\\])\]\((.+?)\)'
+      r'|'
+      // Bold and italic
+      r'\*\*|\*', unicode: true);
 
   // Parse [text] and return the resulting string.
   // Save all found formatting hints to [this.formatNoHighlight]
@@ -129,19 +179,26 @@ class ReferenceChapter {
   //  **bold text**
   //  *italic text*
   //  [link text](link URL)
-  String parseJsonString(String text,
-      {int cursor = 0, bool bold = false, bool italic = false, String? link}) {
+  String parseJsonString(
+    String text, {
+    int cursor = 0,
+    bool bold = false,
+    bool italic = false,
+    String? link,
+    String? image,
+  }) {
     void saveFormatting() {
-      this
-          .formatNoHighlight
-          .add(TextFmtRange(cursor, bold: bold, italic: italic, link: link));
+      this.formatNoHighlight.add(TextFmtRange(cursor,
+          bold: bold, italic: italic, link: link, image: image));
     }
 
-    return text.splitMapJoin(ReferenceChapter.specialRegex, onMatch: (m) {
+    return text.splitMapJoin(ReferenceChapter.formattingRegex, onMatch: (m) {
       switch (m[0]) {
         case r"\*":
         case r"\]":
         case r"\[":
+        case r"\!":
+          /* Escaped special symbol *[]! */
           cursor += 1;
           return m[0]![1];
         case "**":
@@ -153,21 +210,45 @@ class ReferenceChapter {
           saveFormatting();
           return "";
         default:
-          if (m[0]![0] == "[") {
-            link = m[2];
-            saveFormatting();
+          switch (m[0]![0]) {
+            case "!":
+              /* Inline image: ![text for searching](URL) */
+              image = m[2];
+              saveFormatting();
 
-            final parsedLinkText = parseJsonString(m[1] ?? "",
-                cursor: cursor, bold: bold, italic: italic, link: link);
+              final parsedImageText = parseJsonString(m[1] ?? "",
+                  cursor: cursor,
+                  bold: bold,
+                  italic: italic,
+                  link: link,
+                  image: image);
 
-            cursor += parsedLinkText.length;
-            link = null;
-            saveFormatting();
+              cursor += parsedImageText.length;
+              image = null;
+              saveFormatting();
 
-            return parsedLinkText;
+              return parsedImageText;
+            case "[":
+              /* Link: [link text](URL) */
+              link = m[4];
+              saveFormatting();
+
+              final parsedLinkText = parseJsonString(m[3] ?? "",
+                  cursor: cursor,
+                  bold: bold,
+                  italic: italic,
+                  link: link,
+                  image: image);
+
+              cursor += parsedLinkText.length;
+              link = null;
+              saveFormatting();
+
+              return parsedLinkText;
+            default:
+              assert(false);
+              return "";
           }
-          assert(false);
-          return "";
       }
     }, onNonMatch: (n) {
       cursor += n.length;
@@ -189,18 +270,12 @@ class ReferenceChapter {
 
     final TextFmtRange prevFmt = format[prevIndex];
     if (prevFmt.start == cursor) {
-      format.replaceRange(prevIndex, prevIndex + 1, [
-        TextFmtRange(cursor,
-            bold: prevFmt.bold, italic: prevFmt.italic, highlight: highlight)
-      ]);
+      format.replaceRange(prevIndex, prevIndex + 1,
+          [prevFmt.copyWith(start: cursor, highlight: highlight)]);
       format.skip(prevIndex + 1).forEach((f) => f.highlight = highlight);
     } else {
       format.insert(
-          prevIndex + 1,
-          TextFmtRange(cursor,
-              bold: prevFmt.bold,
-              italic: prevFmt.italic,
-              highlight: highlight));
+          prevIndex + 1, prevFmt.copyWith(start: cursor, highlight: highlight));
       format.skip(prevIndex + 2).forEach((f) => f.highlight = highlight);
     }
   }
@@ -210,8 +285,12 @@ class ReferenceChapter {
   //  - formatting according to [this.format]
   //
   // Returns rendered [InlineSpan] and whether [regex]/[jumpTo] matches it
-  (InlineSpan, bool) renderText(BuildContext context,
-      List<InlineSpan>? nestedSpans, RegExp? regex, LinkTapCallback onLinkTap) {
+  (InlineSpan, bool) renderText(
+      BuildContext context,
+      List<InlineSpan>? nestedSpans,
+      RegExp? regex,
+      Map<String, JsonImage> images,
+      LinkTapCallback onLinkTap) {
     final text = this.text;
 
     // Shortcut for the simplest cases of plain text or no text
@@ -229,7 +308,7 @@ class ReferenceChapter {
       );
     }
 
-    // If search field is not empty then get all matches
+    // Create a local copy of formatting and add all search matches to it
     final format = [...this.formatNoHighlight.map((fmt) => fmt.clone())];
 
     bool matches = false;
@@ -247,93 +326,123 @@ class ReferenceChapter {
       });
     }
 
-    // And render those matches using [TextSpan]
-    final highlightSpans = <InlineSpan>[];
+    // And render requested format using [TextSpan] and [WidgetSpan]
+    final spans = <InlineSpan>[];
 
     TextFmtRange prevFmt = TextFmtRange(0);
     for (final fmt in format) {
-      highlightSpans.add(_renderSingleSpan(context,
-          text.substring(prevFmt.start, fmt.start), prevFmt, onLinkTap));
+      // Nothing to do if this image is rendered already
+      if (fmt.image == null || fmt.image != prevFmt.image) {
+        spans.add(_renderSingleSpan(
+            context,
+            text.substring(prevFmt.start, fmt.start),
+            prevFmt,
+            images,
+            onLinkTap));
+      }
       prevFmt = fmt;
     }
-    // Show nested spans after the end of [this.text]
-    highlightSpans.add(_renderSingleSpan(
-        context, text.substring(prevFmt.start), prevFmt, onLinkTap,
+    // Show nested chapters after the end of [this.text]
+    spans.add(_renderSingleSpan(
+        context, text.substring(prevFmt.start), prevFmt, images, onLinkTap,
         children: nestedSpans));
 
-    return (TextSpan(children: highlightSpans), matches);
+    return (TextSpan(children: spans), matches);
   }
 
   // Render a single part of [this.text] that has the same formatting [fmt];
   // this is a building block of rendering [this.text]
-  InlineSpan _renderSingleSpan(BuildContext context, String text,
-      TextFmtRange fmt, LinkTapCallback onLinkTap,
+  InlineSpan _renderSingleSpan(
+      BuildContext context,
+      String text,
+      TextFmtRange fmt,
+      Map<String, JsonImage> images,
+      LinkTapCallback onLinkTap,
       {List<InlineSpan>? children}) {
-    final InlineSpan span;
     final highlightColor = this.depth.highlightColor(context);
     final textStyle = this.depth.textStyle(context).copyWith(
         fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
         fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
         backgroundColor: fmt.highlight ? highlightColor : null);
 
-    final link = fmt.link;
-    if (link == null) {
-      // No hyperlinks - just render the text
-      span = TextSpan(
+    // Paint image if needed
+    Widget? imageWidget;
+    final imageString = fmt.image;
+    if (imageString != null) {
+      final jsonImage = images[imageString.substring(1)];
+      if (jsonImage != null) {
+        imageWidget = Image(
+          image: jsonImage.provider,
+          filterQuality: FilterQuality.medium,
+          fit: (jsonImage.icon) ? null : BoxFit.contain,
+          height: (jsonImage.icon) ? this.depth.textHeight(context) : null,
+        );
+      }
+    }
+
+    return switch ((imageWidget, fmt.link)) {
+      (null, null) => TextSpan(
           // Insert newline between different nesting levels
           text: (children != null) ? "$text\n" : text,
           style: textStyle,
-          children: children);
-    } else {
-      // Use hyperlink style and capture finger taps/mouse clicks
-      span = WidgetSpan(
-        baseline: TextBaseline.alphabetic,
-        alignment: PlaceholderAlignment.baseline,
-        style: textStyle.copyWith(
-          decorationColor: Colors.lightBlue,
-          decoration: TextDecoration.underline,
-          decorationThickness: 1.5,
+          children: children),
+      (Widget image, null) => WidgetSpan(
+          baseline: TextBaseline.ideographic,
+          alignment: PlaceholderAlignment.baseline,
+          child: image,
         ),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            onTap: () async {
-              onLinkTap(link);
-            },
-            child: Text.rich(
-              TextSpan(
-                // Insert newline between different nesting levels
-                text: (children != null) ? "$text\n" : text,
-                style: textStyle.copyWith(color: Colors.lightBlue),
-                children: children,
-              ),
-              // Workaround for https://github.com/flutter/flutter/issues/126962
-              textScaleFactor: 1,
+      (Widget? image, String link) => WidgetSpan(
+          baseline: (image != null)
+              ? TextBaseline.ideographic
+              : TextBaseline.alphabetic,
+          alignment: PlaceholderAlignment.baseline,
+          // Use hyperlink style
+          style: textStyle.copyWith(
+            decorationColor: Colors.lightBlue,
+            decoration: TextDecoration.underline,
+            decorationThickness: 1.5,
+          ),
+          // Capture finger taps/mouse clicks
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () async {
+                onLinkTap(link);
+              },
+              child: (image != null)
+                  ? image
+                  : Text.rich(
+                      TextSpan(
+                        // Insert newline between different nesting levels
+                        text: (children != null) ? "$text\n" : text,
+                        style: textStyle.copyWith(color: Colors.lightBlue),
+                        children: children,
+                      ),
+                      // Workaround for https://github.com/flutter/flutter/issues/126962
+                      textScaleFactor: 1,
+                    ),
             ),
           ),
         ),
-      );
-    }
-
-    return span;
+    };
   }
 
   // Render this chapter as [InlineSpan] suitable for
   // embedding into [RichText] widget.
-  (InlineSpan, bool) recurseSpan(
-      BuildContext context, RegExp? regex, LinkTapCallback onLinkTap) {
+  (InlineSpan, bool) recurseSpan(BuildContext context, RegExp? regex,
+      Map<String, JsonImage> images, LinkTapCallback onLinkTap) {
     // Recursively walk children
     var (nestedSpans, nestedMatches) = this
         .nested
         .map((ReferenceChapter child) =>
-            child.recurseSpan(context, regex, onLinkTap))
+            child.recurseSpan(context, regex, images, onLinkTap))
         .fold<(List<InlineSpan>?, bool)>((null, false), (prev, element) {
       return ((prev.$1 ?? [])..add(element.$1), prev.$2 || element.$2);
     });
 
     // Render this node with children
     var (span, thisMatches) =
-        renderText(context, nestedSpans, regex, onLinkTap);
+        renderText(context, nestedSpans, regex, images, onLinkTap);
 
     // Add indentation for comments
     if (this.depth.isComment()) {
@@ -350,8 +459,13 @@ class ReferenceChapter {
   }
 
   // Render this chapter as widget
-  (Widget, bool) recurseWidget(BuildContext context, RegExp? regex,
-      bool forceExpandCollapse, LinkTapCallback onLinkTap) {
+  (Widget, bool) recurseWidget(
+    BuildContext context,
+    RegExp? regex,
+    bool forceExpandCollapse,
+    Map<String, JsonImage> images,
+    LinkTapCallback onLinkTap,
+  ) {
     final List<Widget> widgets;
     bool nestedMatches;
 
@@ -361,7 +475,7 @@ class ReferenceChapter {
       (widgets, nestedMatches) = this
           .nested
           .map((ReferenceChapter child) => child.recurseWidget(
-              context, regex, forceExpandCollapse, onLinkTap))
+              context, regex, forceExpandCollapse, images, onLinkTap))
           .fold<(List<Widget>, bool)>(([], false), (prev, element) {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
@@ -371,7 +485,7 @@ class ReferenceChapter {
       (nestedSpans, nestedMatches) = this
           .nested
           .map((ReferenceChapter child) =>
-              child.recurseSpan(context, regex, onLinkTap))
+              child.recurseSpan(context, regex, images, onLinkTap))
           .fold<(List<InlineSpan>, bool)>(([], false), (prev, element) {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
@@ -393,15 +507,23 @@ class ReferenceChapter {
     // so use simple [Column] if text was not specified
     final text = this.text;
     if (text == null) {
+      // [ExpansionTile] by definition requires some text in header
+      // so use simple [Column] if text was not specified
       return (
         Container(
             key: key,
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Column(children: widgets)),
+            child: Column(children: [...widgets])),
         nestedMatches
       );
+    } else if (widgets.isEmpty) {
+      // Use simple [Column] if there is nothing to expand in [ExpansionTile]
+      final (span, thisMatches) =
+          renderText(context, null, regex, images, onLinkTap);
+      return (Text.rich(span), thisMatches || nestedMatches);
     } else {
-      final (span, thisMatches) = renderText(context, null, regex, onLinkTap);
+      final (span, thisMatches) =
+          renderText(context, null, regex, images, onLinkTap);
 
       // Force expanding and collapsing when user changes search field
       // and do nothing otherwise
@@ -451,7 +573,8 @@ class ReferenceChapter {
     return found;
   }
 
-  factory ReferenceChapter.fromJson(Nesting depth, Map<String, dynamic> json) {
+  factory ReferenceChapter.fromJson(
+      Nesting depth, Map<String, JsonImage> images, Map<String, dynamic> json) {
     final jsonText = json['text'];
 
     return ReferenceChapter(
@@ -460,7 +583,7 @@ class ReferenceChapter {
       depth: depth,
       nested: (json['nested'] as List<dynamic>?)
               ?.map((e) => ReferenceChapter.fromJson(
-                  depth.next(), e as Map<String, dynamic>))
+                  depth.next(), images, e as Map<String, dynamic>))
               .toList() ??
           [],
     );
@@ -471,7 +594,10 @@ class ReferenceChapter {
 class ReferenceData {
   final List<ReferenceChapter> nested;
 
-  const ReferenceData({required this.nested});
+  // Images that can be referenced from text
+  final Map<String, JsonImage> images;
+
+  const ReferenceData({required this.nested, required this.images});
 
   List<Widget> show(
       BuildContext context, RegExp? regex, bool forceExpandCollapse,
@@ -479,7 +605,8 @@ class ReferenceData {
     return this
         .nested
         .map((child) => child
-            .recurseWidget(context, regex, forceExpandCollapse, onLinkTap)
+            .recurseWidget(
+                context, regex, forceExpandCollapse, this.images, onLinkTap)
             .$1)
         .toList();
   }
@@ -488,12 +615,14 @@ class ReferenceData {
     nested.any((chapter) => chapter.jumpToChapter(chapterId));
   }
 
-  factory ReferenceData.fromJson(Map<String, dynamic> json) {
+  factory ReferenceData.fromJson(
+      Map<String, dynamic> json, Map<String, JsonImage> images) {
     return ReferenceData(
         nested: (json['reference'] as List<dynamic>? ?? [])
             .map<ReferenceChapter>((json) => ReferenceChapter.fromJson(
-                const Nesting(), json as Map<String, dynamic>))
-            .toList());
+                const Nesting(), images, json as Map<String, dynamic>))
+            .toList(),
+        images: images);
   }
 }
 
