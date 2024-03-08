@@ -280,16 +280,17 @@ class ReferenceChapter {
     }
   }
 
-  // Renders [this.text] while taking into account:
-  //  - highlighting [regex] matches
-  //  - formatting according to [this.format]
-  //
-  // Returns rendered [InlineSpan] and whether [regex]/[jumpTo] matches it
+  /// Renders [this.text] while taking into account:
+  ///  - highlighting [regex] matches
+  ///  - formatting according to [this.format]
+  ///
+  /// Returns rendered [InlineSpan] and whether [regex] matches it
   (InlineSpan, bool) renderText(
       BuildContext context,
       List<InlineSpan>? nestedSpans,
       RegExp? regex,
       Map<String, JsonImage> images,
+      Map<String, JsonIcon> icons,
       LinkTapCallback onLinkTap) {
     final text = this.text;
 
@@ -338,25 +339,27 @@ class ReferenceChapter {
             text.substring(prevFmt.start, fmt.start),
             prevFmt,
             images,
+            icons,
             onLinkTap));
       }
       prevFmt = fmt;
     }
     // Show nested chapters after the end of [this.text]
-    spans.add(_renderSingleSpan(
-        context, text.substring(prevFmt.start), prevFmt, images, onLinkTap,
+    spans.add(_renderSingleSpan(context, text.substring(prevFmt.start), prevFmt,
+        images, icons, onLinkTap,
         children: nestedSpans));
 
     return (TextSpan(children: spans), matches);
   }
 
-  // Render a single part of [this.text] that has the same formatting [fmt];
-  // this is a building block of rendering [this.text]
+  /// Render a single part of [this.text] that has the same formatting [fmt];
+  /// this is a building block of rendering [this.text]
   InlineSpan _renderSingleSpan(
       BuildContext context,
       String text,
       TextFmtRange fmt,
       Map<String, JsonImage> images,
+      Map<String, JsonIcon> icons,
       LinkTapCallback onLinkTap,
       {List<InlineSpan>? children}) {
     final highlightColor = this.depth.highlightColor(context);
@@ -369,14 +372,49 @@ class ReferenceChapter {
     Widget? imageWidget;
     final imageString = fmt.image;
     if (imageString != null) {
+      final errorStyle = TextStyle(color: Theme.of(context).colorScheme.error);
       final jsonImage = images[imageString.substring(1)];
+      final jsonIcon = icons[imageString.substring(1)];
+
       if (jsonImage != null) {
-        imageWidget = Image(
-          image: jsonImage.provider,
-          filterQuality: FilterQuality.medium,
-          fit: (jsonImage.icon) ? null : BoxFit.contain,
-          height: (jsonImage.icon) ? this.depth.textHeight(context) : null,
+        imageWidget = FutureBuilder(
+          future: jsonImage.provider,
+          builder: (context, snapshot) {
+            final imageProvider = snapshot.data;
+            if (imageProvider == null) {
+              if (snapshot.hasError) {
+                return Text(
+                    "Error loading ${imageString.substring(1)} provider: ${snapshot.error}",
+                    style: errorStyle);
+              }
+              return const SizedBox.shrink();
+            }
+
+            return Image(
+              errorBuilder: (context, err, _) {
+                return Text("Error loading ${imageString.substring(1)}: $err",
+                    style: errorStyle);
+              },
+              image: imageProvider,
+              filterQuality: FilterQuality.medium,
+              fit: BoxFit.contain,
+            );
+          },
         );
+      } else if (jsonIcon != null) {
+        imageWidget = Image(
+          errorBuilder: (context, err, _) {
+            return Text("Error loading ${imageString.substring(1)}: $err",
+                style: errorStyle);
+          },
+          image: jsonIcon.provider,
+          filterQuality: FilterQuality.medium,
+          height: this.depth.textHeight(context),
+        );
+      } else {
+        imageWidget = Text(
+            '"${imageString.substring(1)}" is not defined in JSON',
+            style: TextStyle(color: Theme.of(context).colorScheme.error));
       }
     }
 
@@ -419,7 +457,7 @@ class ReferenceChapter {
                         children: children,
                       ),
                       // Workaround for https://github.com/flutter/flutter/issues/126962
-                      textScaleFactor: 1,
+                      textScaler: TextScaler.noScaling,
                     ),
             ),
           ),
@@ -427,22 +465,26 @@ class ReferenceChapter {
     };
   }
 
-  // Render this chapter as [InlineSpan] suitable for
-  // embedding into [RichText] widget.
-  (InlineSpan, bool) recurseSpan(BuildContext context, RegExp? regex,
-      Map<String, JsonImage> images, LinkTapCallback onLinkTap) {
+  /// Render this chapter as [InlineSpan] suitable for
+  /// embedding into [RichText] widget.
+  (InlineSpan, bool) recurseSpan(
+      BuildContext context,
+      RegExp? regex,
+      Map<String, JsonImage> images,
+      Map<String, JsonIcon> icons,
+      LinkTapCallback onLinkTap) {
     // Recursively walk children
     var (nestedSpans, nestedMatches) = this
         .nested
         .map((ReferenceChapter child) =>
-            child.recurseSpan(context, regex, images, onLinkTap))
+            child.recurseSpan(context, regex, images, icons, onLinkTap))
         .fold<(List<InlineSpan>?, bool)>((null, false), (prev, element) {
       return ((prev.$1 ?? [])..add(element.$1), prev.$2 || element.$2);
     });
 
     // Render this node with children
     var (span, thisMatches) =
-        renderText(context, nestedSpans, regex, images, onLinkTap);
+        renderText(context, nestedSpans, regex, images, icons, onLinkTap);
 
     // Add indentation for comments
     if (this.depth.isComment()) {
@@ -464,6 +506,7 @@ class ReferenceChapter {
     RegExp? regex,
     bool forceExpandCollapse,
     Map<String, JsonImage> images,
+    Map<String, JsonIcon> icons,
     LinkTapCallback onLinkTap,
   ) {
     final List<Widget> widgets;
@@ -475,7 +518,7 @@ class ReferenceChapter {
       (widgets, nestedMatches) = this
           .nested
           .map((ReferenceChapter child) => child.recurseWidget(
-              context, regex, forceExpandCollapse, images, onLinkTap))
+              context, regex, forceExpandCollapse, images, icons, onLinkTap))
           .fold<(List<Widget>, bool)>(([], false), (prev, element) {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
@@ -485,7 +528,7 @@ class ReferenceChapter {
       (nestedSpans, nestedMatches) = this
           .nested
           .map((ReferenceChapter child) =>
-              child.recurseSpan(context, regex, images, onLinkTap))
+              child.recurseSpan(context, regex, images, icons, onLinkTap))
           .fold<(List<InlineSpan>, bool)>(([], false), (prev, element) {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
@@ -519,11 +562,11 @@ class ReferenceChapter {
     } else if (widgets.isEmpty) {
       // Use simple [Column] if there is nothing to expand in [ExpansionTile]
       final (span, thisMatches) =
-          renderText(context, null, regex, images, onLinkTap);
+          renderText(context, null, regex, images, icons, onLinkTap);
       return (Text.rich(span), thisMatches || nestedMatches);
     } else {
       final (span, thisMatches) =
-          renderText(context, null, regex, images, onLinkTap);
+          renderText(context, null, regex, images, icons, onLinkTap);
 
       // Force expanding and collapsing when user changes search field
       // and do nothing otherwise
@@ -573,8 +616,7 @@ class ReferenceChapter {
     return found;
   }
 
-  factory ReferenceChapter.fromJson(
-      Nesting depth, Map<String, JsonImage> images, Map<String, dynamic> json) {
+  factory ReferenceChapter.fromJson(Nesting depth, Map<String, dynamic> json) {
     final jsonText = json['text'];
 
     return ReferenceChapter(
@@ -583,7 +625,7 @@ class ReferenceChapter {
       depth: depth,
       nested: (json['nested'] as List<dynamic>?)
               ?.map((e) => ReferenceChapter.fromJson(
-                  depth.next(), images, e as Map<String, dynamic>))
+                  depth.next(), e as Map<String, dynamic>))
               .toList() ??
           [],
     );
@@ -594,10 +636,14 @@ class ReferenceChapter {
 class ReferenceData {
   final List<ReferenceChapter> nested;
 
-  // Images that can be referenced from text
+  /// Images that can be referenced from text
   final Map<String, JsonImage> images;
 
-  const ReferenceData({required this.nested, required this.images});
+  /// Icons that can be referenced from text
+  final Map<String, JsonIcon> icons;
+
+  const ReferenceData(
+      {required this.nested, required this.images, required this.icons});
 
   List<Widget> show(
       BuildContext context, RegExp? regex, bool forceExpandCollapse,
@@ -605,8 +651,8 @@ class ReferenceData {
     return this
         .nested
         .map((child) => child
-            .recurseWidget(
-                context, regex, forceExpandCollapse, this.images, onLinkTap)
+            .recurseWidget(context, regex, forceExpandCollapse, this.images,
+                this.icons, onLinkTap)
             .$1)
         .toList();
   }
@@ -615,14 +661,15 @@ class ReferenceData {
     nested.any((chapter) => chapter.jumpToChapter(chapterId));
   }
 
-  factory ReferenceData.fromJson(
-      Map<String, dynamic> json, Map<String, JsonImage> images) {
+  factory ReferenceData.fromJson(Map<String, dynamic> json,
+      Map<String, JsonImage> images, Map<String, JsonIcon> icons) {
     return ReferenceData(
         nested: (json['reference'] as List<dynamic>? ?? [])
             .map<ReferenceChapter>((json) => ReferenceChapter.fromJson(
-                const Nesting(), images, json as Map<String, dynamic>))
+                const Nesting(), json as Map<String, dynamic>))
             .toList(),
-        images: images);
+        images: images,
+        icons: icons);
   }
 }
 

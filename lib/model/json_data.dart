@@ -1,7 +1,4 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import 'package:nemesis_helper/ui/screen_reference.dart';
@@ -28,22 +25,22 @@ class JsonData extends ChangeNotifier {
     required this.images,
   });
 
-  // Selected language
+  /// Selected language
   final String currentLanguage;
 
-  // Supported languages (in database, not in Flutter interface)
+  /// Supported languages (in database, not in Flutter interface)
   final List<String> supportedLanguages;
 
-  // Modules available for selection
+  /// Modules available for selection
   final List<Module> selectableModules;
 
-  // Reference to show
+  /// Reference to show
   final ReferenceData reference;
 
-  // Images being loaded
+  /// Images being loaded
   final Map<String, JsonImage> images;
 
-  // Merges [from] json into [to]
+  /// Merges [from] json into [to]
   static void _deepMergeMap(
       Map<String, dynamic> to, Map<String, dynamic> from) {
     from.forEach((key, value) {
@@ -69,8 +66,8 @@ class JsonData extends ChangeNotifier {
     });
   }
 
-  // Merges [from] json into [to] as _deepMergeMap() does, but start
-  // from object [id]
+  /// Merges [from] json into [to] as _deepMergeMap() does, but start
+  /// from object [id]
   static bool _findAndMerge(dynamic to, Map<String, dynamic> from, String id) {
     for (final value in (to is List)
         ? to
@@ -94,10 +91,13 @@ class JsonData extends ChangeNotifier {
     return false;
   }
 
-  // Return 'true' on success
-  static Future<bool> _loadAndApplyPatch(Map<String, dynamic> module,
-      String patch, Future<dynamic> Function(String) loadAndDecode) async {
-    final patchJson = await loadAndDecode(patch) as List<dynamic>?;
+  /// Return 'true' on success
+  static Future<bool> _loadAndApplyPatch(
+      Map<String, dynamic> module,
+      String patch,
+      Future<dynamic> Function(String, {required bool canFail})
+          openJson) async {
+    final patchJson = await openJson(patch, canFail: true) as List<dynamic>?;
     if (patchJson == null) return false;
     for (final (patchedObject as Map<String, dynamic>) in patchJson) {
       _findAndMerge(module, patchedObject, patchedObject['id'] as String);
@@ -105,27 +105,20 @@ class JsonData extends ChangeNotifier {
     return true;
   }
 
-  // Load [selectedModules] from [jsonName] using [locale] language
-  // with English as fallback
+  /// Load [selectedModules] from [jsonName] using [locale] language
+  /// with English as fallback
   static Future<JsonData> fromJson(
+      BuildContext context,
       Locale? locale,
       String jsonName,
       List<String>? selectedModules,
-      File? Function(String name) openFile) async {
+      Future<dynamic> Function(String name, {required bool canFail}) openJson,
+      Future<ImageProvider<Object>?> Function(String name) openImage) async {
     List<Module> selectableModules = [];
 
-    Future<dynamic> loadJsonAndDecode(String jsonName) async {
-      try {
-        final jsonString = await openFile("$jsonName.json")?.readAsString();
-        if (jsonString == null) return null;
-        return jsonDecode(jsonString);
-      } catch (_) {
-        return null;
-      }
-    }
-
     // Parse main JSON file
-    final mainJson = await loadJsonAndDecode(jsonName) as Map<String, dynamic>;
+    final mainJson =
+        await openJson(jsonName, canFail: false) as Map<String, dynamic>;
 
     // Get list of supported languages
     final supportedLanguages = (mainJson['languages'] as List<dynamic>)
@@ -138,38 +131,40 @@ class JsonData extends ChangeNotifier {
         : supportedLanguages.first;
 
     // Apply main JSON localization (with fallback to English)
-    final mainLocale = (await loadJsonAndDecode("${jsonName}_$language") ??
-        await loadJsonAndDecode("${jsonName}_en")) as Map<String, dynamic>?;
+    final mainLocale =
+        (await openJson("${jsonName}_$language", canFail: true) ??
+                await openJson("${jsonName}_en", canFail: true))
+            as Map<String, dynamic>?;
     if (mainLocale != null) _deepMergeMap(mainJson, mainLocale);
 
     // Load each module and append to main json, merging and/or replacing same values
     for (final moduleName in (mainJson['modules'] as List<dynamic>? ?? [])
         .map((m) => (m as Map<String, dynamic>)['name'] as String)) {
       // Load module with patches
-      final module =
-          (await loadJsonAndDecode(moduleName) as Map<String, dynamic>?) ?? {};
+      final module = (await openJson(moduleName, canFail: false)
+              as Map<String, dynamic>?) ??
+          {};
 
       // Apply module patches
       for (final (patchName as String)
           in module['patches'] as List<dynamic>? ?? []) {
-        await _loadAndApplyPatch(
-            module, "${moduleName}_$patchName", loadJsonAndDecode);
+        await _loadAndApplyPatch(module, "${moduleName}_$patchName", openJson);
       }
 
       // Apply module localization with patches (with fallback to English)
       final moduleLocale =
-          (await loadJsonAndDecode("${moduleName}_$language") ??
-                  await loadJsonAndDecode("${moduleName}_en"))
+          (await openJson("${moduleName}_$language", canFail: true) ??
+                  await openJson("${moduleName}_en", canFail: true))
               as Map<String, dynamic>?;
       if (moduleLocale != null) {
         _deepMergeMap(module, moduleLocale);
 
         for (final (patchName as String)
             in moduleLocale['patches'] as List<dynamic>? ?? []) {
-          await _loadAndApplyPatch(module,
-                  "${moduleName}_${language}_$patchName", loadJsonAndDecode) ||
+          await _loadAndApplyPatch(
+                  module, "${moduleName}_${language}_$patchName", openJson) ||
               await _loadAndApplyPatch(
-                  module, "${moduleName}_en_$patchName", loadJsonAndDecode);
+                  module, "${moduleName}_en_$patchName", openJson);
         }
       }
 
@@ -191,39 +186,34 @@ class JsonData extends ChangeNotifier {
       }
     }
 
-    MapEntry<String, JsonImage>? parseJsonImage(
-        Map<String, dynamic> image, bool icon) {
-      try {
-        return MapEntry(
-            image['id'] as String,
-            JsonImage(
-                icon: icon,
-                provider: FileImage(openFile(image['name'] as String)!)));
-      } catch (_) {
-        return null;
-      }
+    final icons = <String, JsonIcon>{};
+    for (final (name, id) in (mainJson['icons'] as List<dynamic>? ?? [])
+        .map((icon) => icon as Map<String, dynamic>)
+        .nonNulls
+        .map((icon) => (icon['name'] as String, icon['id'] as String))) {
+      final provider = await openImage(name);
+      if (provider == null) continue;
+      if (context.mounted) precacheImage(provider, context);
+      icons.addAll({id: JsonIcon(provider: provider)});
     }
 
     final images = <String, JsonImage>{};
-    images.addEntries((mainJson['icons'] as List<dynamic>?)
-            ?.map((icon) => icon as Map<String, dynamic>)
-            .map((icon) => parseJsonImage(icon, true))
-            .nonNulls ??
-        []);
-    images.addEntries((mainJson['images'] as List<dynamic>?)
-            ?.map((icon) => icon as Map<String, dynamic>)
-            .map((icon) => parseJsonImage(icon, false))
-            .nonNulls ??
-        []);
+    for (final (name, id) in (mainJson['images'] as List<dynamic>? ?? [])
+        .map((image) => image as Map<String, dynamic>)
+        .nonNulls
+        .map((image) => (image['name'] as String, image['id'] as String))) {
+      images.addAll({id: JsonImage(provider: openImage(name))});
+    }
 
-    // Parse the resulting JSON
     return JsonData(
         currentLanguage: language,
         supportedLanguages: supportedLanguages,
         selectableModules: selectableModules,
+        // Parse the resulting JSON
         reference: ReferenceData.fromJson(
           mainJson,
           images,
+          icons,
         ),
         images: images);
   }
@@ -232,12 +222,18 @@ class JsonData extends ChangeNotifier {
 class JsonImage {
   const JsonImage({
     required this.provider,
-    required this.icon,
   });
 
-  // Provider to load the image
-  final ImageProvider provider;
+  /// Provider to load the image
+  final Future<ImageProvider?> provider;
+}
 
-  // Set to render with same height as text
-  final bool icon;
+class JsonIcon {
+  const JsonIcon({
+    required this.provider,
+  });
+
+  /// Provider to load the icon.  Icons are small
+  /// so there is no real need in [Future].
+  final ImageProvider provider;
 }

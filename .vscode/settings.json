@@ -2,7 +2,30 @@
   "cSpell.files": [ "**/*.rs", "**/*.dart" ],
   "cSpell.words": [
     "fullscreen",
-    "Maximizable"
+    "jsons",
+    "Maximizable",
+    "precache",
+    "supabase"
   ],
-  "cmake.sourceDirectory": "build/windows/_deps/corrosion-src/test/cpp2rust/cpp2rust"
+  "cmake.sourceDirectory": "build/windows/_deps/corrosion-src/test/cpp2rust/cpp2rust",
+  "sqltools.connections": [
+    {
+      "pgOptions": {
+        "ssl": {
+          "requestCert": true,
+          "cert": "",
+          "ca": "C:\\programming\\nemesis_helper\\prod-ca-2021.crt",
+          "rejectUnauthorized": true
+        }
+      },
+      "previewLimit": 50,
+      "server": "aws-0-eu-central-1.pooler.supabase.com",
+      "port": 5432,
+      "askForPassword": true,
+      "driver": "PostgreSQL",
+      "name": "Nemesis",
+      "username": "postgres.crkiyacenvzsbetbmmyg",
+      "database": "postgres"
+    }
+  ]
 }

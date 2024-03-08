@@ -1,29 +1,40 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localized_locales/flutter_localized_locales.dart';
-import 'package:nemesis_helper/model/json_data.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:nemesis_helper/db_cached.dart';
+import 'package:nemesis_helper/model/json_data.dart';
+import 'package:nemesis_helper/model/settings.dart';
 import 'package:nemesis_helper/ui/screen_reference.dart';
 import 'package:nemesis_helper/ui/screen_settings.dart';
-import 'package:nemesis_helper/model/settings.dart';
+
+bool useWindowManager() {
+  return !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+}
 
 void main() async {
   // Wait for Flutter framework initialization
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (defaultTargetPlatform == TargetPlatform.windows ||
-      defaultTargetPlatform == TargetPlatform.linux ||
-      defaultTargetPlatform == TargetPlatform.macOS) {
+  await Supabase.initialize(
+    url: 'https://crkiyacenvzsbetbmmyg.supabase.co',
+    anonKey:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNya2l5YWNlbnZ6c2JldGJtbXlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDE3NzUyODMsImV4cCI6MjAxNzM1MTI4M30.dlpo_aVZ57dF_lOKd3WqW53iNycHTvG7jnz7SfszmK0',
+  );
+
+  if (useWindowManager()) {
     await windowManager.ensureInitialized();
     await windowManager.setMinimumSize(const Size(250, 450));
     await windowManager.setSize(const Size(400, 700));
@@ -44,17 +55,15 @@ class AppLoader extends StatefulWidget {
 
 class _AppLoaderState extends State<AppLoader> {
   late UISettings _ui;
-
-  JsonData? _jsonData;
-
-  bool _loading = false;
+  late Future<DbCached> _db;
+  Future<JsonData?>? _jsonDataFuture;
 
   @override
   void initState() {
     this._ui = UISettings(widget.preferences);
 
-    // Load data
-    updateJsonFromFile();
+    // Start loading JSONs
+    this._db = DbCached.build();
 
     super.initState();
   }
@@ -62,50 +71,25 @@ class _AppLoaderState extends State<AppLoader> {
   @override
   void dispose() {
     this._ui.dispose();
-    this._jsonData?.dispose();
     super.dispose();
   }
 
-  void updateJsonFromFile() {
-    // Load JSON only on first startup or if it was prompted by settings change
-    if (_jsonData != null && !this._ui.reloadJson) return;
+  Future<JsonData?> _loadJsonData(
+      BuildContext context, Future<DbCached> dbFuture) async {
+    final db = await dbFuture;
+    // ignore: use_build_context_synchronously
+    final jsonData = await JsonData.fromJson(context, this._ui.locale, "data",
+        this._ui.selectedModules, db.openJson, db.openImage);
 
-    // Check if loading already works asynchronously
-    if (_loading) return;
+    // Update modules list for settings screen
+    if (this._ui.selectedModules == null) {
+      this._ui.selectedModulesSet(
+          jsonData.selectableModules.map((m) => m.name).toList());
+    }
 
-    SchedulerBinding.instance.addPostFrameCallback((_) async {
-      // Check if loading already works asynchronously
-      if (_loading) return;
-      // Schedule JSON loading.  Since updateJsonFromFile() is invoked
-      // from build() we can't call setState() immediately.
-      setState(() {
-        this._ui.reloadJson = false;
-        this._loading = true;
-      });
+    db.collectGarbage();
 
-      Directory documents = await getApplicationDocumentsDirectory();
-      File? openFile(String name) {
-        try {
-          return File(p.join(documents.path, name));
-        } catch (_) {
-          return null;
-        }
-      }
-
-      final jsonData = await JsonData.fromJson(
-          this._ui.locale, "data", this._ui.selectedModules, openFile);
-
-      // Update modules list for settings screen
-      if (this._ui.selectedModules == null) {
-        this._ui.selectedModulesSet(
-            jsonData.selectableModules.map((m) => m.name).toList());
-      }
-
-      setState(() {
-        this._loading = false;
-        this._jsonData = jsonData;
-      });
-    });
+    return jsonData;
   }
 
   @override
@@ -132,66 +116,90 @@ class _AppLoaderState extends State<AppLoader> {
           displayLarge: exo2Style,
         );
 
-        return MaterialApp(
-          onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
-          localizationsDelegates: const [
-            LocaleNamesLocalizationsDelegate(),
-            ...AppLocalizations.localizationsDelegates
-          ],
-          locale: ui.locale,
-          supportedLocales: AppLocalizations.supportedLocales,
-          theme: ThemeData(
-            useMaterial3: true,
-            visualDensity: VisualDensity.adaptivePlatformDensity
-                .copyWith(vertical: VisualDensity.compact.vertical),
-            brightness: Brightness.dark,
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.blue,
-              brightness: Brightness.dark,
-              surface: Colors.blueGrey.shade900,
-              onSurface: Colors.blueGrey.shade100,
-              background: const Color.fromARGB(255, 10, 20, 30),
-              onBackground: Colors.blueGrey.shade100,
-            ),
-            primaryTextTheme: exo2textTheme,
-            textTheme: exo2textTheme,
-            listTileTheme: const ListTileThemeData().copyWith(dense: true),
-            expansionTileTheme: const ExpansionTileThemeData().copyWith(
-              expandedAlignment: Alignment.centerLeft,
-              collapsedShape: const Border.fromBorderSide(BorderSide.none),
-              shape: const Border.fromBorderSide(BorderSide.none),
-            ),
-          ),
-          builder: (context, child) {
-            final MediaQueryData data = MediaQuery.of(context);
+        /* Make sure that App is rebuilt after reloading database */
+        return FutureBuilder(
+          future: this._jsonDataFuture,
+          builder: (context, snapshot) {
+            // If user changed UI settings we might need to reload JSON
+            // (e.g. when language changed)
+            if (snapshot.connectionState == ConnectionState.none ||
+                this._ui.reloadJson &&
+                    snapshot.connectionState == ConnectionState.done) {
+              SchedulerBinding.instance.addPostFrameCallback((_) {
+                final jsonFuture = _loadJsonData(context, this._db);
+                setState(() {
+                  this._ui.reloadJson = false;
+                  this._jsonDataFuture = jsonFuture;
+                });
+              });
+            }
 
-            // Set proper localized title and show window (async, so not right away)
-            windowManager.setTitle(AppLocalizations.of(context).appTitle);
-            windowManager.waitUntilReadyToShow(null, () async {
-              await windowManager.show();
-              await windowManager.focus();
-            });
+            String? error;
+            if (snapshot.hasError) {
+              error = '${snapshot.error}\n${snapshot.stackTrace}';
+            }
 
-            // Apply text scaling
-            return MediaQuery(
-              data: data.copyWith(
-                  textScaleFactor: data.textScaleFactor * ui.scale),
+            final JsonData? jsonData = snapshot.data;
 
-              // [JsonData] is accessed from settings screen which
-              // is on different Route so provider should be inserted
-              // here rather than in `home`.
-              child: ChangeNotifierProvider<JsonData?>.value(
-                  value: this._jsonData,
-                  // Null will not happen since "home" is specified
-                  child: child ?? const Text("No MediaQuery child found")),
+            return MaterialApp(
+              onGenerateTitle: (context) =>
+                  AppLocalizations.of(context).appTitle,
+              localizationsDelegates: const [
+                LocaleNamesLocalizationsDelegate(),
+                ...AppLocalizations.localizationsDelegates
+              ],
+              locale: ui.locale,
+              supportedLocales: AppLocalizations.supportedLocales,
+              theme: ThemeData(
+                useMaterial3: true,
+                visualDensity: VisualDensity.adaptivePlatformDensity
+                    .copyWith(vertical: VisualDensity.compact.vertical),
+                brightness: Brightness.dark,
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: Colors.blue,
+                  brightness: Brightness.dark,
+                  surface: Colors.blueGrey.shade900,
+                  onSurface: Colors.blueGrey.shade100,
+                  background: const Color.fromARGB(255, 10, 20, 30),
+                  onBackground: Colors.blueGrey.shade100,
+                ),
+                primaryTextTheme: exo2textTheme,
+                textTheme: exo2textTheme,
+                listTileTheme: const ListTileThemeData().copyWith(dense: true),
+                expansionTileTheme: const ExpansionTileThemeData().copyWith(
+                  expandedAlignment: Alignment.centerLeft,
+                  collapsedShape: const Border.fromBorderSide(BorderSide.none),
+                  shape: const Border.fromBorderSide(BorderSide.none),
+                ),
+              ),
+              builder: (context, child) {
+                final MediaQueryData data = MediaQuery.of(context);
+
+                if (useWindowManager()) {
+                  // Set proper localized title and show window (async, so not right away)
+                  windowManager.setTitle(AppLocalizations.of(context).appTitle);
+                  windowManager.waitUntilReadyToShow(null, () async {
+                    await windowManager.show();
+                    await windowManager.focus();
+                  });
+                }
+
+                // Apply text scaling
+                return MediaQuery(
+                  data: data.copyWith(textScaler: TextScaler.linear(ui.scale)),
+
+                  // [JsonData] is accessed from settings screen which
+                  // is on different Route so provider should be inserted
+                  // here rather than in `home`.
+                  child: ChangeNotifierProvider<JsonData?>.value(
+                      value: jsonData,
+                      // Null will not happen since "home" is specified
+                      child: child ?? const Text("No MediaQuery child found")),
+                );
+              },
+              home: _App(ui, error),
             );
           },
-          home: Builder(builder: (context) {
-            // Reload data if user selects another language
-            updateJsonFromFile();
-
-            return _App(ui);
-          }),
         );
       }),
     );
@@ -199,9 +207,10 @@ class _AppLoaderState extends State<AppLoader> {
 }
 
 class _App extends StatelessWidget {
-  const _App(this.ui, {super.key});
+  const _App(this.ui, this.error, {super.key});
 
   final UISettings ui;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
@@ -267,6 +276,9 @@ class _App extends StatelessWidget {
             );
           }),
           body: Builder(builder: (context) {
+            final error = this.error;
+            if (error != null) return Text(error);
+
             return TabBarView(children: [
               Consumer<JsonData?>(
                 builder: (context, jsonData, _) =>

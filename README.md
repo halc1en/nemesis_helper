@@ -10,9 +10,10 @@ Interactive player aid for Nemesis board game
 - [x] Styling settings
 - [x] Running on Windows
 - [ ] Running on Android
+- [x] Running on Web
 - [ ] Running on iOS?
-- [ ] Firebase? local connection with cached database
-- [ ] Firebase? network connection
+- [x] Local development from user folder
+- [x] Supabase! network connection
 - [ ] Web instance
 - [x] Choose english by default if system language is not supported
 
@@ -24,9 +25,8 @@ Interactive player aid for Nemesis board game
 
 ### Rules reference
 
-- [ ] Fill reference data in local database. Format?
-- [ ] Fill reference data in network database. Format?
-- [ ] Fetch reference to in-memory format (network first, local backup option)
+- [ ] Fill reference data in database
+- [x] Fetch reference to in-memory format (network first, local backup option)
 - [x] Render reference
 - [ ] Bookmarking reference entries
 - [x] Filtering reference entries
