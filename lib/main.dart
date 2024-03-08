@@ -8,7 +8,6 @@ import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localized_locales/flutter_localized_locales.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:nemesis_helper/db_cached.dart';
@@ -27,12 +26,6 @@ bool useWindowManager() {
 void main() async {
   // Wait for Flutter framework initialization
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Supabase.initialize(
-    url: 'https://crkiyacenvzsbetbmmyg.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNya2l5YWNlbnZ6c2JldGJtbXlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDE3NzUyODMsImV4cCI6MjAxNzM1MTI4M30.dlpo_aVZ57dF_lOKd3WqW53iNycHTvG7jnz7SfszmK0',
-  );
 
   if (useWindowManager()) {
     await windowManager.ensureInitialized();
@@ -63,7 +56,7 @@ class _AppLoaderState extends State<AppLoader> {
     this._ui = UISettings(widget.preferences);
 
     // Start loading JSONs
-    this._db = DbCached.build();
+    this._db = DbCached.build(this._ui);
 
     super.initState();
   }
@@ -77,9 +70,13 @@ class _AppLoaderState extends State<AppLoader> {
   Future<JsonData?> _loadJsonData(
       BuildContext context, Future<DbCached> dbFuture) async {
     final db = await dbFuture;
-    // ignore: use_build_context_synchronously
-    final jsonData = await JsonData.fromJson(context, this._ui.locale, "data",
-        this._ui.selectedModules, db.openJson, db.openImage);
+    final jsonData = await JsonData.fromJson(
+        // ignore: use_build_context_synchronously
+        context,
+        this._ui,
+        "data",
+        db.openJson,
+        db.openImage);
 
     // Update modules list for settings screen
     if (this._ui.selectedModules == null) {

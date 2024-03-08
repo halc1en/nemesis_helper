@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:nemesis_helper/model/settings.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:quiver/time.dart';
@@ -24,19 +25,33 @@ class DbCached {
   DbCached._(this._cacheImages, this._cacheUpdatedAt, this._cacheJsons,
       this._networkJsonsCache, this._networkImagesList);
 
-  static Future<DbCached> build() async {
+  static Future<DbCached> build(UISettings ui) async {
+    final Future<Map<String, dynamic>?>? jsons;
+    final Future<List<FileObject>?>? images;
+
+    if (!ui.offline) {
+      await Supabase.initialize(
+        url: 'https://crkiyacenvzsbetbmmyg.supabase.co',
+        anonKey:
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNya2l5YWNlbnZ6c2JldGJtbXlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDE3NzUyODMsImV4cCI6MjAxNzM1MTI4M30.dlpo_aVZ57dF_lOKd3WqW53iNycHTvG7jnz7SfszmK0',
+      );
+      jsons = Supabase.instance.client
+          .from('jsons')
+          .select('name, json')
+          .timeout(aSecond * 5)
+          .then((rows) => rows.map((row) =>
+              MapEntry<String, dynamic>(row['name'] as String, row['json'])))
+          .then((entries) => Map.fromEntries(entries));
+      images = Supabase.instance.client.storage
+          .from('images')
+          .list(searchOptions: const SearchOptions(limit: 1 << 31 - 1));
+    } else {
+      jsons = null;
+      images = null;
+    }
+
     // Schedule filesystem/network accesses
     final documents = getApplicationCacheDirectory();
-    final jsons = Supabase.instance.client
-        .from('jsons')
-        .select('name, json')
-        .timeout(aSecond * 5)
-        .then((rows) => rows.map((row) =>
-            MapEntry<String, dynamic>(row['name'] as String, row['json'])))
-        .then((entries) => Map.fromEntries(entries));
-    final images = Supabase.instance.client.storage
-        .from('images')
-        .list(searchOptions: const SearchOptions(limit: 1 << 31 - 1));
 
     // And wait for finish
     try {
@@ -141,7 +156,7 @@ class DbCached {
 
   /// Load image from network database (or from a local cache);
   /// will throw if image is not found
-  Future<ImageProvider<Object>> openImage(String name) async {
+  Future<ImageProvider<Object>> openImage(String name, bool offline) async {
     this._referencedFiles.add(name);
 
     final localImage = await this._cacheImages.get(name);
@@ -152,10 +167,11 @@ class DbCached {
           .firstWhere((image) => image.name == name)
           .updatedAt;
 
-      if (localImage == null ||
-          localUpdatedAt == null ||
-          remoteUpdatedAt == null ||
-          localUpdatedAt != remoteUpdatedAt) {
+      if (!offline &&
+          (localImage == null ||
+              localUpdatedAt == null ||
+              remoteUpdatedAt == null ||
+              localUpdatedAt != remoteUpdatedAt)) {
         final remoteImage = await Supabase.instance.client.storage
             .from('images')
             .download(name)

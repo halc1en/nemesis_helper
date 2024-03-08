@@ -11,5 +11,6 @@
     "language": "Language: ",
     "languageSystem": "System",
     "scaleDescription": "Set text scale across the whole application",
-    "scale": "Text scale: "
+    "scale": "Text scale: ",
+    "offlineMode": "Offline mode: "
 }

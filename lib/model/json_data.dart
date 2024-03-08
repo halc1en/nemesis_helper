@@ -1,5 +1,6 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 import 'package:flutter/material.dart';
+import 'package:nemesis_helper/model/settings.dart';
 
 import 'package:nemesis_helper/ui/screen_reference.dart';
 
@@ -109,11 +110,14 @@ class JsonData extends ChangeNotifier {
   /// with English as fallback
   static Future<JsonData> fromJson(
       BuildContext context,
-      Locale? locale,
+      UISettings ui,
       String jsonName,
-      List<String>? selectedModules,
       Future<dynamic> Function(String name, {required bool canFail}) openJson,
-      Future<ImageProvider<Object>?> Function(String name) openImage) async {
+      Future<ImageProvider<Object>?> Function(String name, bool offline)
+          openImage) async {
+    final locale = ui.locale;
+    final selectedModules = ui.selectedModules;
+    final offline = ui.offline;
     List<Module> selectableModules = [];
 
     // Parse main JSON file
@@ -191,7 +195,7 @@ class JsonData extends ChangeNotifier {
         .map((icon) => icon as Map<String, dynamic>)
         .nonNulls
         .map((icon) => (icon['name'] as String, icon['id'] as String))) {
-      final provider = await openImage(name);
+      final provider = await openImage(name, offline);
       if (provider == null) continue;
       if (context.mounted) precacheImage(provider, context);
       icons.addAll({id: JsonIcon(provider: provider)});
@@ -202,7 +206,7 @@ class JsonData extends ChangeNotifier {
         .map((image) => image as Map<String, dynamic>)
         .nonNulls
         .map((image) => (image['name'] as String, image['id'] as String))) {
-      images.addAll({id: JsonImage(provider: openImage(name))});
+      images.addAll({id: JsonImage(provider: openImage(name, offline))});
     }
 
     return JsonData(

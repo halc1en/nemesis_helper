@@ -9,7 +9,7 @@ class UISettings extends ChangeNotifier {
   static const double scaleMin = 0.5;
   static const double scaleMax = 1.8;
 
-  // Flag to indicate that changed setting requires reloading/reparsing JSON
+  /// Flag to indicate that changed setting requires reloading/reparsing JSON
   bool reloadJson = false;
 
   // Settings that are available to user, so any
@@ -18,6 +18,7 @@ class UISettings extends ChangeNotifier {
   int _tabIndex;
   Locale? _locale;
   String? _selectedModules;
+  bool _offline;
 
   double get scale => _scale;
   set scale(double value) {
@@ -116,9 +117,19 @@ class UISettings extends ChangeNotifier {
     }
   }
 
+  bool get offline => this._offline;
+  set offline(bool value) {
+    if (this._offline == value) return;
+    this._offline = value;
+    this._sharedPreferences?.setBool("offline", value);
+
+    notifyListeners();
+  }
+
   UISettings(this._sharedPreferences)
       : _scale = 1.0,
-        _tabIndex = 0 {
+        _tabIndex = 0,
+        _offline = false {
     final preferences = _sharedPreferences;
     if (preferences == null) {
       return;
@@ -137,6 +148,9 @@ class UISettings extends ChangeNotifier {
 
       final modulesValue = preferences.getString("modules");
       if (modulesValue != null) _selectedModules = modulesValue;
+
+      final offlineValue = preferences.getBool("offline");
+      if (offlineValue != null) _offline = offlineValue;
     } catch (err) {
       print("SharedPreferences error: $err");
     }
