@@ -84,34 +84,40 @@ class _LanguageConfig extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Consumer<UISettings>(
-      builder: (context, ui, child) => ListTile(
-        title: Wrap(
-          clipBehavior: Clip.hardEdge,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(AppLocalizations.of(context).language,
-                style: textTheme.bodyMedium),
-            DropdownButton(
-              underline: const Underline(),
-              value: ui.locale,
-              onChanged: (Locale? v) => ui.locale = v,
-              items: <Locale?>[
-                null,
-                ...this.supportedLanguages?.map((ln) => Locale(ln)) ??
-                    WidgetsBinding.instance.platformDispatcher.locales
-              ]
-                  .map((Locale? locale) => DropdownMenuItem<Locale>(
+      builder: (context, ui, child) {
+        // When language environment changes we must not crash
+        final locales = <Locale?>[
+          null,
+          ...this.supportedLanguages?.map((ln) => Locale(ln)) ??
+              WidgetsBinding.instance.platformDispatcher.locales
+        ];
+        if (!locales.contains(ui.locale)) {
+          ui.locale = null;
+        }
+
+        return ListTile(
+          title: Wrap(
+            clipBehavior: Clip.hardEdge,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(AppLocalizations.of(context).language,
+                  style: textTheme.bodyMedium),
+              DropdownButton(
+                underline: const Underline(),
+                value: ui.locale,
+                onChanged: (Locale? v) => ui.locale = v,
+                items: locales
+                    .map((Locale? locale) => DropdownMenuItem<Locale>(
                         value: locale,
-                        child: Text(
-                          LocaleNames.of(context)?.nameOf(locale.toString()) ??
-                              AppLocalizations.of(context).languageSystem,
-                        ),
-                      ))
-                  .toList(),
-            ),
-          ],
-        ),
-      ),
+                        child: Text(LocaleNames.of(context)
+                                ?.nameOf(locale.toString()) ??
+                            AppLocalizations.of(context).languageSystem)))
+                    .toList(),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
