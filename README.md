@@ -9,7 +9,7 @@ Interactive player aid for Nemesis board game
 - [x] Localization framework
 - [x] Styling settings
 - [x] Running on Windows
-- [ ] Running on Android
+- [x] Running on Android
 - [x] Running on Web
 - [ ] Running on iOS?
 - [x] Local development from user folder
