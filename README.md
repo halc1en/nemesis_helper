@@ -14,7 +14,7 @@ Interactive player aid for Nemesis board game
 - [ ] Running on iOS?
 - [x] Local development from user folder
 - [x] Supabase! network connection
-- [ ] Web instance
+- [x] Web instance
 - [x] Choose english by default if system language is not supported
 
 ### Design
