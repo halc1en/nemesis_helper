@@ -1,11 +1,13 @@
 // Local cache for remote database
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:nemesis_helper/model/settings.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:quiver/time.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -29,6 +31,7 @@ class DbCached {
     final Future<Map<String, dynamic>?>? jsons;
     final Future<List<FileObject>?>? images;
 
+    // Schedule network accesses
     if (!ui.offline) {
       await Supabase.initialize(
         url: 'https://crkiyacenvzsbetbmmyg.supabase.co',
@@ -50,7 +53,7 @@ class DbCached {
       images = null;
     }
 
-    // Schedule filesystem/network accesses
+    // Schedule filesystem access
     final documents = getApplicationCacheDirectory();
 
     // And wait for finish
@@ -59,6 +62,12 @@ class DbCached {
       print("cache at ${(await documents).path}");
     } catch (e) {
       print("Could not get cache directory, error: $e");
+    }
+
+    try {
+      print("documents at ${(await getApplicationDocumentsDirectory()).path}");
+    } catch (e) {
+      print("Could not get documents directory, error: $e");
     }
 
     Map<String, dynamic>? rawJsonsCache;
@@ -77,10 +86,18 @@ class DbCached {
 
     final PackageInfo packageInfo = await PackageInfo.fromPlatform();
     final pkgName = packageInfo.packageName;
-    Future<LazyBox<Uint8List>> cachedImages =
-        Hive.openLazyBox('${pkgName}_images');
-    Future<Box<String>> cachedUpdatedAt = Hive.openBox('${pkgName}_updated_at');
-    Future<Box<String>> cachedJsons = Hive.openBox('${pkgName}_jsons');
+
+    bool compactAfter10(int entries, int deletedEntries) {
+      return deletedEntries > 10;
+    }
+
+    Future<LazyBox<Uint8List>> cachedImages = Hive.openLazyBox(
+        '${pkgName}_images',
+        compactionStrategy: compactAfter10);
+    Future<Box<String>> cachedUpdatedAt = Hive.openBox('${pkgName}_updated_at',
+        compactionStrategy: compactAfter10);
+    Future<Box<String>> cachedJsons =
+        Hive.openBox('${pkgName}_jsons', compactionStrategy: compactAfter10);
     return DbCached._(await cachedImages, await cachedUpdatedAt,
         await cachedJsons, rawJsonsCache, networkImagesList);
   }
@@ -114,6 +131,17 @@ class DbCached {
     }
   }
 
+  /// Debug-only offline mode feature to load from local filesystem
+  Future<Uint8List?> openFile(String name) async {
+    try {
+      final documents = await getApplicationDocumentsDirectory();
+      return await File(p.join(documents.path, "nemesis_helper", name))
+          .readAsBytes();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Open JSON from network database (or from a local cache);
   /// on error will throw iff [canFail] is false
   Future<Map<String, dynamic>?> openJson(String name,
@@ -122,6 +150,14 @@ class DbCached {
     final filename = "$name.json";
 
     this._referencedFiles.add(filename);
+
+    if (kDebugMode) {
+      final bytes = await openFile(filename);
+      if (bytes != null) {
+        print("Loaded \"$filename\" from local filesystem");
+        return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      }
+    }
 
     // Load from network with fallback to local copy
     if (networkJsons == null) {
@@ -158,6 +194,14 @@ class DbCached {
   /// will throw if image is not found
   Future<ImageProvider<Object>> openImage(String name, bool offline) async {
     this._referencedFiles.add(name);
+
+    if (kDebugMode) {
+      final bytes = await openFile(name);
+      if (bytes != null) {
+        print("Loaded \"$name\" from local filesystem");
+        return MemoryImage(bytes);
+      }
+    }
 
     final localImage = await this._cacheImages.get(name);
     final localUpdatedAt = this._cacheUpdatedAt.get(name);
