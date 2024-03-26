@@ -197,8 +197,12 @@ class JsonData extends ChangeNotifier {
         .map((icon) => (icon['name'] as String, icon['id'] as String))) {
       final provider = await openImage(name, offline);
       if (provider == null) continue;
-      if (context.mounted) precacheImage(provider, context);
-      icons.addAll({id: JsonIcon(provider: provider)});
+      if (context.mounted) {
+        precacheImage(provider, context, size: const Size.square(64.0));
+      }
+      icons.addAll({
+        id: JsonIcon(provider: ResizeImage(provider, width: 64, height: 64))
+      });
     }
 
     final images = <String, JsonImage>{};
@@ -215,10 +219,7 @@ class JsonData extends ChangeNotifier {
         selectableModules: selectableModules,
         // Parse the resulting JSON
         reference: ReferenceData.fromJson(
-          mainJson,
-          images,
-          icons,
-        ),
+            mainJson, images, icons, ui.sharedPreferences),
         images: images);
   }
 }

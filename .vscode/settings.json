@@ -1,6 +1,8 @@
 {
   "cSpell.files": [ "**/*.rs", "**/*.dart" ],
   "cSpell.words": [
+    "Alives",
+    "bitmask",
     "fullscreen",
     "jsons",
     "Maximizable",

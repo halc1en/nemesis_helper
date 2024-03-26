@@ -1,37 +1,47 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:nemesis_helper/model/json_data.dart';
-import 'package:quiver/time.dart';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:quiver/time.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+
+import 'package:nemesis_helper/model/json_data.dart';
 import 'package:nemesis_helper/model/settings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 typedef LinkTapCallback = void Function(String);
-typedef LoadImageCallback = JsonImage? Function(String);
 
 @immutable
 class Nesting {
   const Nesting() : _depth = 0;
   const Nesting._explicit(this._depth);
 
-  // First 3 levels are for headers and next 2 for body
+  /// First 3 levels are for headers and next 2 for body
   final int _depth;
 
-  // Cached styles/sizes for faster retrieval
+  /// Cached styles for faster retrieval
   static List<TextStyle>? _styles;
+
+  /// Cached sizes for faster retrieval
   static List<double>? _heights;
 
-  // Headers do not take part in multi-paragraph search
+  /// Most top-level chapter?
+  bool isTop() => this._depth == 0;
+
+  /// Headers do not take part in multi-paragraph search
   bool isHeader() => this._depth <= 2;
 
-  // Comments explain previous paragraph clearer and should be indented
+  /// Comments explain previous paragraph clearer and should be indented
   bool isComment() => this._depth >= 4;
 
-  // First two levels use [ExpansionTile] and can be collapsed
+  /// First two levels use [ExpansionTile] and can be collapsed
   bool isCollapsible() => this._depth <= 1;
 
   Nesting next() => Nesting._explicit(this._depth + 1);
 
-  // Get text style for each of 0 to 4 allowed nesting depths in JSON
+  /// Get text style for each of 0 to 4 allowed nesting depths in JSON
   TextStyle textStyle(BuildContext context) {
     _initStyles(context);
     return Nesting._styles![this._depth.clamp(0, Nesting._styles!.length - 1)];
@@ -132,6 +142,113 @@ class TextFmtRange {
   }
 }
 
+/// A helper class to calculate offset from top-level chapter to jump target
+class JumpTarget {
+  /// Top-level parent of jump target
+  final ReferenceChapter _top;
+
+  /// Jump target
+  final ReferenceChapter _target;
+
+  /// Index of [_top] and [_target] (the one used in [ScrollablePositionedList.builder])
+  final int index;
+
+  /// Temporary widget used to calculate offset from
+  /// top parent of jump target to itself
+  final Offstage offstage;
+
+  JumpTarget({
+    required ReferenceChapter top,
+    required ReferenceChapter target,
+    required this.index,
+    required this.offstage,
+  })  : _top = top,
+        _target = target,
+        assert(top.globalKey(true) != null),
+        assert(target.globalKey(true) != null);
+
+  double calculateOffset() {
+    final topRender =
+        _top.globalKey(true)?.currentContext?.findRenderObject() as RenderBox?;
+    final targetRender = _target
+        .globalKey(true)
+        ?.currentContext
+        ?.findRenderObject() as RenderBox?;
+    if (topRender == null || targetRender == null) {
+      print("link target is not rendered anymore!");
+      return 0.0;
+    }
+    assert(topRender.attached && targetRender.attached);
+
+    final topPosition = topRender.localToGlobal(Offset.zero);
+    final targetPosition = targetRender.localToGlobal(Offset.zero);
+
+    final offset = topPosition.dy - targetPosition.dy;
+    print(
+        "Chapter #$index has offset $offset in size ${topRender.size.height}");
+    return offset;
+  }
+}
+
+/// Helper class for holding additional information that goes along Jsons
+class ReferenceAssets {
+  ReferenceAssets(
+      {required this.images,
+      required this.icons,
+      required SharedPreferences? sharedPreferences})
+      : _sharedPreferences = sharedPreferences {
+    this._collapsed = List<int>.from(base64.decode(
+        sharedPreferences?.getString("reference_collapsed_chapters") ?? ""));
+  }
+
+  /// Images that can be referenced from text
+  final Map<String, JsonImage> images;
+
+  /// Icons that can be referenced from text
+  final Map<String, JsonIcon> icons;
+
+  final SharedPreferences? _sharedPreferences;
+
+  /// Inefficient but Dart has neither unsigned integers nor byte integers
+  late List<int> _collapsed;
+
+  /// Set expansion state for specified [ReferenceChapter.id]
+  void updateExpanded(int id, bool set) {
+    if (this.isExpanded(id) == set) return;
+
+    // base64 requires 8-bit chunk size
+    int index = id << 3;
+    int bitmask = 1 << (id & 0x7);
+
+    if (index >= this._collapsed.length) {
+      this
+          ._collapsed
+          .addAll(List<int>.filled(index + 1 - this._collapsed.length, 0));
+    }
+
+    if (set) {
+      this._collapsed[index] &= ~bitmask;
+    } else {
+      this._collapsed[index] |= bitmask;
+    }
+
+    /// By default all items will be expanded
+    /// (also because base64 uses 0 by default)
+    this._sharedPreferences?.setString(
+        "reference_collapsed_chapters", base64.encode(this._collapsed));
+  }
+
+  /// Get expansion state for specified [ReferenceChapter.id]
+  bool isExpanded(int id) {
+    int index = id << 3;
+    int bitmask = 1 << (id & 0x7);
+
+    final expanded = index >= this._collapsed.length ||
+        (this._collapsed[index] & bitmask) == 0;
+    return expanded;
+  }
+}
+
 class ReferenceChapter {
   ReferenceChapter({
     required String? text,
@@ -148,17 +265,58 @@ class ReferenceChapter {
   // Nested chapters
   final List<ReferenceChapter> nested;
 
-  // This chapter's id and key (for hyperlinks to it)
+  /// This chapter's id (for hyperlinks to it)
   final String? id;
-  final GlobalKey key = GlobalKey();
 
-  // This chapter's format without search field highlight
+  /// This chapter's global key (for hyperlinks to it)
+  ///
+  /// [offstage] chooses which widget to select: the one rendered
+  /// for user or one hidden in the [Offstage].
+  GlobalKey? globalKey(bool offstage) {
+    return (offstage) ? _globalKeyOffstage : _globalKeyReal;
+  }
+
+  // ignore: prefer_final_fields
+  late GlobalKey? _globalKeyReal =
+      (id != null || depth.isTop()) ? GlobalKey() : null;
+  // ignore: prefer_final_fields
+  late GlobalKey? _globalKeyOffstage =
+      (id != null || depth.isTop()) ? GlobalKey() : null;
+
+  static int idGen = 0;
+  final int chapterId = idGen++;
+
+  /// This chapter's format without search field highlight
   final List<TextFmtRange> formatNoHighlight = [];
 
-  // Nesting level in JSON
+  /// Nesting level in JSON
   final Nesting depth;
 
-  ExpansionTileController? expansionController;
+  /// Expansion state
+  void setExpanded(bool value, ReferenceAssets assets,
+      {required bool offstage}) {
+    if (offstage) return;
+
+    assets.updateExpanded(this.chapterId, value);
+
+    try {
+      if (value) {
+        this.expansionController(offstage)?.expand();
+      } else {
+        this.expansionController(offstage)?.collapse();
+      }
+    } catch (err) {
+      if (kDebugMode) {
+        print(
+            'Could not ${value ? "expand" : "collapse"} ${this.text}, probably off-screen');
+      }
+    }
+  }
+
+  ExpansionTileController? _expansionController;
+  ExpansionTileController? expansionController(bool offstage) {
+    return (offstage) ? null : this._expansionController;
+  }
 
   static final RegExp formattingRegex = RegExp(
       // Escaping special characters
@@ -284,14 +442,13 @@ class ReferenceChapter {
   ///  - highlighting [regex] matches
   ///  - formatting according to [this.format]
   ///
-  /// Returns rendered [InlineSpan] and whether [regex] matches it
-  (InlineSpan, bool) renderText(
+  /// Returns rendered [TextSpan] and whether [regex] matches it
+  (TextSpan, bool) renderText(
       BuildContext context,
       List<InlineSpan>? nestedSpans,
       RegExp? regex,
-      Map<String, JsonImage> images,
-      Map<String, JsonIcon> icons,
-      LinkTapCallback onLinkTap) {
+      ReferenceAssets assets,
+      LinkTapCallback? onLinkTap) {
     final text = this.text;
 
     // Shortcut for the simplest cases of plain text or no text
@@ -338,15 +495,14 @@ class ReferenceChapter {
             context,
             text.substring(prevFmt.start, fmt.start),
             prevFmt,
-            images,
-            icons,
+            assets,
             onLinkTap));
       }
       prevFmt = fmt;
     }
     // Show nested chapters after the end of [this.text]
-    spans.add(_renderSingleSpan(context, text.substring(prevFmt.start), prevFmt,
-        images, icons, onLinkTap,
+    spans.add(_renderSingleSpan(
+        context, text.substring(prevFmt.start), prevFmt, assets, onLinkTap,
         children: nestedSpans));
 
     return (TextSpan(children: spans), matches);
@@ -354,13 +510,8 @@ class ReferenceChapter {
 
   /// Render a single part of [this.text] that has the same formatting [fmt];
   /// this is a building block of rendering [this.text]
-  InlineSpan _renderSingleSpan(
-      BuildContext context,
-      String text,
-      TextFmtRange fmt,
-      Map<String, JsonImage> images,
-      Map<String, JsonIcon> icons,
-      LinkTapCallback onLinkTap,
+  InlineSpan _renderSingleSpan(BuildContext context, String text,
+      TextFmtRange fmt, ReferenceAssets assets, LinkTapCallback? onLinkTap,
       {List<InlineSpan>? children}) {
     final highlightColor = this.depth.highlightColor(context);
     final textStyle = this.depth.textStyle(context).copyWith(
@@ -373,8 +524,8 @@ class ReferenceChapter {
     final imageString = fmt.image;
     if (imageString != null) {
       final errorStyle = TextStyle(color: Theme.of(context).colorScheme.error);
-      final jsonImage = images[imageString.substring(1)];
-      final jsonIcon = icons[imageString.substring(1)];
+      final jsonImage = assets.images[imageString.substring(1)];
+      final jsonIcon = assets.icons[imageString.substring(1)];
 
       if (jsonImage != null) {
         imageWidget = FutureBuilder(
@@ -390,12 +541,21 @@ class ReferenceChapter {
               return const SizedBox.shrink();
             }
 
+            // Determine image size based on actual screen size
+            final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+            final screenSize = MediaQuery.sizeOf(context);
+
             return Image(
               errorBuilder: (context, err, _) {
                 return Text("Error loading ${imageString.substring(1)}: $err",
                     style: errorStyle);
               },
-              image: imageProvider,
+              image: ResizeImage(
+                imageProvider,
+                policy: ResizeImagePolicy.fit,
+                width: (screenSize.width * devicePixelRatio).round(),
+                height: (screenSize.height * devicePixelRatio).round(),
+              ),
               filterQuality: FilterQuality.medium,
               fit: BoxFit.contain,
             );
@@ -444,9 +604,7 @@ class ReferenceChapter {
           child: MouseRegion(
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
-              onTap: () async {
-                onLinkTap(link);
-              },
+              onTap: (onLinkTap != null) ? () async => onLinkTap(link) : null,
               child: (image != null)
                   ? image
                   : Text.rich(
@@ -467,24 +625,20 @@ class ReferenceChapter {
 
   /// Render this chapter as [InlineSpan] suitable for
   /// embedding into [RichText] widget.
-  (InlineSpan, bool) recurseSpan(
-      BuildContext context,
-      RegExp? regex,
-      Map<String, JsonImage> images,
-      Map<String, JsonIcon> icons,
-      LinkTapCallback onLinkTap) {
+  (InlineSpan, bool) recurseSpan(BuildContext context, RegExp? regex,
+      ReferenceAssets assets, LinkTapCallback? onLinkTap, bool offstage) {
     // Recursively walk children
     var (nestedSpans, nestedMatches) = this
         .nested
         .map((ReferenceChapter child) =>
-            child.recurseSpan(context, regex, images, icons, onLinkTap))
+            child.recurseSpan(context, regex, assets, onLinkTap, offstage))
         .fold<(List<InlineSpan>?, bool)>((null, false), (prev, element) {
       return ((prev.$1 ?? [])..add(element.$1), prev.$2 || element.$2);
     });
 
     // Render this node with children
-    var (span, thisMatches) =
-        renderText(context, nestedSpans, regex, images, icons, onLinkTap);
+    var (InlineSpan span, thisMatches) =
+        renderText(context, nestedSpans, regex, assets, onLinkTap);
 
     // Add indentation for comments
     if (this.depth.isComment()) {
@@ -492,23 +646,27 @@ class ReferenceChapter {
         child: Container(
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.only(left: Indentation),
-          child: Text.rich(span),
+          child: Text.rich(key: this.globalKey(offstage), span),
         ),
       );
+    } else {
+      final globalKey = this.globalKey(offstage);
+      if (globalKey != null) {
+        // Create a [Widget] to assign key to
+        span = WidgetSpan(child: Text.rich(key: globalKey, span));
+      }
     }
 
     return (span, nestedMatches || thisMatches);
   }
 
-  // Render this chapter as widget
-  (Widget, bool) recurseWidget(
-    BuildContext context,
-    RegExp? regex,
-    bool forceExpandCollapse,
-    Map<String, JsonImage> images,
-    Map<String, JsonIcon> icons,
-    LinkTapCallback onLinkTap,
-  ) {
+  /// Render this chapter as widget
+  ///
+  /// Set [fake] to build yet another instance of the widget; useful
+  /// to calculate it's dimensions when jumping through links.
+  (Widget, bool) recurseWidget(BuildContext context, RegExp? regex,
+      bool forceExpandCollapse, ReferenceAssets assets,
+      {required bool offstage, required LinkTapCallback? onLinkTap}) {
     final List<Widget> widgets;
     bool nestedMatches;
 
@@ -518,7 +676,8 @@ class ReferenceChapter {
       (widgets, nestedMatches) = this
           .nested
           .map((ReferenceChapter child) => child.recurseWidget(
-              context, regex, forceExpandCollapse, images, icons, onLinkTap))
+              context, regex, forceExpandCollapse, assets,
+              offstage: offstage, onLinkTap: onLinkTap))
           .fold<(List<Widget>, bool)>(([], false), (prev, element) {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
@@ -528,7 +687,7 @@ class ReferenceChapter {
       (nestedSpans, nestedMatches) = this
           .nested
           .map((ReferenceChapter child) =>
-              child.recurseSpan(context, regex, images, icons, onLinkTap))
+              child.recurseSpan(context, regex, assets, onLinkTap, offstage))
           .fold<(List<InlineSpan>, bool)>(([], false), (prev, element) {
         return (prev.$1..add(element.$1), prev.$2 || element.$2);
       });
@@ -546,74 +705,161 @@ class ReferenceChapter {
       }
     }
 
-    // [ExpansionTile] by definition requires some text in header
-    // so use simple [Column] if text was not specified
     final text = this.text;
     if (text == null) {
       // [ExpansionTile] by definition requires some text in header
-      // so use simple [Column] if text was not specified
+      // so use simple [Column] for children if text was not specified
+
+      if (widgets.length == 1) {
+        return (widgets.first, nestedMatches);
+      }
+
       return (
-        Container(
-            key: key,
+        Padding(
+            key: this.globalKey(offstage),
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Column(children: [...widgets])),
         nestedMatches
       );
     } else if (widgets.isEmpty) {
-      // Use simple [Column] if there is nothing to expand in [ExpansionTile]
+      // Use simple [Text] if there is nothing to expand in [ExpansionTile]
       final (span, thisMatches) =
-          renderText(context, null, regex, images, icons, onLinkTap);
-      return (Text.rich(span), thisMatches || nestedMatches);
+          renderText(context, null, regex, assets, onLinkTap);
+      return (
+        Text.rich(key: this.globalKey(offstage), span),
+        thisMatches || nestedMatches
+      );
     } else {
       final (span, thisMatches) =
-          renderText(context, null, regex, images, icons, onLinkTap);
+          renderText(context, null, regex, assets, onLinkTap);
 
       // Force expanding and collapsing when user changes search field
       // and do nothing otherwise
-      if (forceExpandCollapse && (nestedMatches || thisMatches)) {
-        this.expansionController?.expand();
-      } else if (forceExpandCollapse && !nestedMatches && !thisMatches) {
-        this.expansionController?.collapse();
+      final forcedExpansion = nestedMatches || thisMatches;
+      if (forceExpandCollapse) {
+        this.setExpanded(forcedExpansion, assets, offstage: offstage);
       }
-      this.expansionController ??= ExpansionTileController();
+      if (!offstage) {
+        this._expansionController ??= ExpansionTileController();
+      }
 
       return (
-        ExpansionTile(
-          key: key,
-          controller: this.expansionController,
-          initiallyExpanded: true,
-          maintainState: true,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-          title: Text.rich(span),
-          children: widgets,
+        SizedBox(
+          // Assign global key here to make sure that all
+          // [ScrollablePositionedList] children have one.
+          // It's necessary to avoid needless full rebuilds
+          // (including state!!) for it's jumpTo() method.
+          key: this.globalKey(offstage),
+          child: ExpansionTile(
+            controller: this.expansionController(offstage),
+            // To make sure children widgets are always available for offset
+            // calculation and expansion (it's easier this way than expanding
+            // all nested [ExpansionTile]s frame-by-frame through callbacks
+            // when searching for jump target's position)
+            maintainState: true,
+            onExpansionChanged: (value) =>
+                assets.updateExpanded(this.chapterId, value),
+            initiallyExpanded: assets.isExpanded(this.chapterId),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+            title: Text.rich(span),
+            children: widgets,
+          ),
         ),
         nestedMatches || thisMatches
       );
     }
   }
 
-  bool jumpToChapter(String chapterId) {
-    bool found = (this.id == chapterId.substring(1) ||
-        this.nested.any((chapter) => chapter.jumpToChapter(chapterId)));
+  /// Jump or scroll to this chapter if it matches [chapterId].
+  /// Set [parentContext] to closest rendered parent chapter of
+  /// this one; if not null then we can just scroll to target.
+  ///
+  /// Returns whether this chapter (including children) matches
+  /// and optional [JumpTarget] instance if target isn't rendered
+  /// yet.
+  (bool, JumpTarget?) jumpToChapter(
+    BuildContext context,
+    int index,
+    bool useScroll,
+    String chapterId,
+    List<ReferenceChapter> parents,
+    RegExp? regex,
+    ReferenceAssets assets,
+  ) {
+    bool thisMatches = (this.id == chapterId.substring(1));
+    final chaptersList = parents.toList()..add(this);
 
-    if (found) {
-      this.expansionController?.expand();
+    final (bool nestedMatches, JumpTarget? jumpTarget) = this
+            .nested
+            .map((chapter) => chapter.jumpToChapter(context, index, useScroll,
+                chapterId, chaptersList, regex, assets))
+            .where((value) => value.$1)
+            .firstOrNull ??
+        (false, null);
 
-      final thisContext = this.key.currentContext;
-      if (thisContext != null) {
-        // Wait for 220 ms for expand() to finish (add a bit to
-        // expansion time to avoid overshooting)
-        for (var i = 0; i <= 220; i += 20) {
-          Future.delayed(aMillisecond * (220 - i), () {
-            Scrollable.ensureVisible(thisContext,
-                curve: Curves.linear, duration: aMillisecond * 50);
-            return const SizedBox.shrink();
-          });
-        }
-      }
+    print(
+        "Searching for $chapterId at nesting ${this.depth._depth}, this: $thisMatches, nested: $nestedMatches, text: $text, ${(this.globalKey(false)?.currentContext == null) ? 'null context' : 'has context'}");
+
+    if (!thisMatches && !nestedMatches) {
+      return (false, null);
     }
 
-    return found;
+    if (!thisMatches) {
+      return (true, jumpTarget);
+    }
+
+    // Jump to target!
+
+    // Expand all parents of jump target and target itself...
+    for (final chapter in chaptersList) {
+      chapter.setExpanded(true, assets, offstage: false);
+    }
+
+    // Easy path: target is rendered already so we can just scroll to it.
+    var thisContext = this.globalKey(false)?.currentContext;
+    final thisRender = thisContext?.findRenderObject() as RenderBox?;
+
+    if (thisRender != null && useScroll) {
+      print(
+          "Found target in viewport at offset ${thisRender.localToGlobal(Offset.zero).dy}, scrolling");
+
+      // Wait for for parents' expand() to finish (200 ms is default
+      // expansion time) while scrolling to target's parents, and
+      // then scroll to the target.
+      for (var i = 0; i <= 300; i += 50) {
+        Future.delayed(aMillisecond * i, () {
+          final targetContext = chaptersList.reversed
+              .map((chapter) => chapter.globalKey(false)?.currentContext)
+              .firstOrNull;
+          if (targetContext != null) {
+            Scrollable.ensureVisible(
+              targetContext,
+              curve: Curves.linear,
+              duration: aMillisecond * 100,
+            );
+          }
+        });
+      }
+
+      return (true, null);
+    }
+
+    // Hard path: calculate proper position for jump and schedule it
+    final topChapter = chaptersList.first;
+    return (
+      true,
+      JumpTarget(
+        top: topChapter,
+        target: this,
+        index: index,
+        offstage: Offstage(
+          child: topChapter
+              .recurseWidget(context, regex, true, assets,
+                  offstage: true, onLinkTap: null)
+              .$1,
+        ),
+      )
+    );
   }
 
   factory ReferenceChapter.fromJson(Nesting depth, Map<String, dynamic> json) {
@@ -636,14 +882,9 @@ class ReferenceChapter {
 class ReferenceData {
   final List<ReferenceChapter> nested;
 
-  /// Images that can be referenced from text
-  final Map<String, JsonImage> images;
+  final ReferenceAssets assets;
 
-  /// Icons that can be referenced from text
-  final Map<String, JsonIcon> icons;
-
-  const ReferenceData(
-      {required this.nested, required this.images, required this.icons});
+  const ReferenceData({required this.nested, required this.assets});
 
   List<Widget> show(
       BuildContext context, RegExp? regex, bool forceExpandCollapse,
@@ -651,25 +892,48 @@ class ReferenceData {
     return this
         .nested
         .map((child) => child
-            .recurseWidget(context, regex, forceExpandCollapse, this.images,
-                this.icons, onLinkTap)
+            .recurseWidget(context, regex, forceExpandCollapse, this.assets,
+                offstage: false, onLinkTap: onLinkTap)
             .$1)
         .toList();
   }
 
-  void jumpToChapter(String chapterId) {
-    nested.any((chapter) => chapter.jumpToChapter(chapterId));
+  JumpTarget? jumpToChapter(
+      BuildContext context, int currentIndex, String chapterId, RegExp? regex) {
+    return nested.indexed
+        .map((val) {
+          final (index, chapter) = val;
+          return chapter.jumpToChapter(
+            context,
+            index,
+            // Seems that ensureVisible() does not work will with
+            // [ExpansionTile] so use jumps instead of scrolling
+            false,
+            chapterId,
+            [],
+            regex,
+            this.assets,
+          );
+        })
+        .where((ret) => ret.$1)
+        .firstOrNull
+        ?.$2;
   }
 
-  factory ReferenceData.fromJson(Map<String, dynamic> json,
-      Map<String, JsonImage> images, Map<String, JsonIcon> icons) {
+  factory ReferenceData.fromJson(
+      Map<String, dynamic> json,
+      Map<String, JsonImage> images,
+      Map<String, JsonIcon> icons,
+      SharedPreferences? sharedPreferences) {
     return ReferenceData(
         nested: (json['reference'] as List<dynamic>? ?? [])
             .map<ReferenceChapter>((json) => ReferenceChapter.fromJson(
                 const Nesting(), json as Map<String, dynamic>))
             .toList(),
-        images: images,
-        icons: icons);
+        assets: ReferenceAssets(
+            images: images,
+            icons: icons,
+            sharedPreferences: sharedPreferences));
   }
 }
 
@@ -685,13 +949,49 @@ class Reference extends StatefulWidget {
 
 class _ReferenceState extends State<Reference>
     with AutomaticKeepAliveClientMixin<Reference> {
-  final TextEditingController _searchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
+  /// Saved state for when app is closed
+  late TextEditingController _searchController;
+  final _itemScrollController = ItemScrollController();
+  final _itemPositionsListener = ItemPositionsListener.create();
+
   RegExp? _regex;
   bool _forceExpandCollapse = false;
 
+  final _listKey = GlobalKey();
+
+  /// Clicked link's target useful for calculating it's dimensions
+  Offstage? _offstage;
+
+  // For overall smoothness
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    final lastSearch =
+        widget.ui.sharedPreferences?.getString("reference_search_field");
+    this._searchController = TextEditingController(text: lastSearch);
+    this._searchController.addListener(_searchFieldListener);
+    if (lastSearch != null) onSearchChange(lastSearch);
+
+    this
+        ._itemPositionsListener
+        .itemPositions
+        .addListener(_itemPositionListener);
+
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+
+    this._searchController.dispose();
+    this
+        ._itemPositionsListener
+        .itemPositions
+        .removeListener(_itemPositionListener);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -703,8 +1003,19 @@ class _ReferenceState extends State<Reference>
     final forceExpandCollapse = this._forceExpandCollapse;
     this._forceExpandCollapse = false;
 
+    double initialAlignment =
+        widget.ui.sharedPreferences?.getDouble("reference_scroll_alignment") ??
+            0.0;
+    int initialIndex =
+        widget.ui.sharedPreferences?.getInt("reference_scroll_index") ?? 0;
+    if (initialIndex >= ref.nested.length) {
+      initialIndex = 0;
+      initialAlignment = 0.0;
+    }
+
     return Column(
       children: [
+        if (this._offstage != null) this._offstage!,
         TextField(
           controller: this._searchController,
           decoration: InputDecoration(
@@ -721,36 +1032,93 @@ class _ReferenceState extends State<Reference>
             ),
           ),
           onChanged: (value) {
-            if (value.isNotEmpty) {
-              try {
-                setState(() {
-                  this._forceExpandCollapse = true;
-                  this._regex = RegExp(value,
-                      caseSensitive: false,
-                      unicode: true,
-                      multiLine: true,
-                      dotAll: true);
-                });
-              } catch (_) {}
-            } else if (this._regex != null) {
-              setState(() {
-                this._regex = null;
-              });
-            }
+            onSearchChange(value);
           },
         ),
         Expanded(
-          child: SingleChildScrollView(
-            restorationId: "reference_scroll_offset",
-            controller: this._scrollController,
-            child: Column(
-              children: ref.show(context, this._regex, forceExpandCollapse,
-                  onLinkTap: (String jumpTo) =>
-                      widget.reference?.jumpToChapter(jumpTo)),
-            ),
+          child: ScrollablePositionedList.builder(
+            key: this._listKey,
+            initialScrollIndex: initialIndex,
+            initialAlignment: initialAlignment,
+            itemScrollController: this._itemScrollController,
+            itemPositionsListener: this._itemPositionsListener,
+            itemCount: ref.nested.length,
+            itemBuilder: (context, index) {
+              return ref.nested[index].recurseWidget(
+                context,
+                this._regex,
+                forceExpandCollapse,
+                ref.assets,
+                offstage: false,
+                onLinkTap: (String jumpTo) {
+                  final jumpTarget = widget.reference
+                      ?.jumpToChapter(context, index, jumpTo, this._regex);
+
+                  if (jumpTarget != null) {
+                    setState(() {
+                      this._offstage = jumpTarget.offstage;
+                    });
+                    SchedulerBinding.instance.addPostFrameCallback((_) {
+                      final offset = jumpTarget.calculateOffset();
+                      setState(() {
+                        this._offstage = null;
+                      });
+
+                      final listHeight = (this
+                              ._listKey
+                              .currentContext
+                              ?.findRenderObject() as RenderBox?)
+                          ?.size
+                          .height;
+
+                      if (listHeight != null) {
+                        // Do not use [ScrollablePositionedList.scrollTo],
+                        // it is broken when list has [ExpansionTile]
+                        this._itemScrollController.jumpTo(
+                            index: jumpTarget.index,
+                            alignment: offset / listHeight);
+                      }
+                    });
+                  }
+                },
+              ).$1;
+            },
           ),
         ),
       ],
     );
+  }
+
+  void _searchFieldListener() {
+    widget.ui.sharedPreferences
+        ?.setString("reference_search_field", this._searchController.text);
+  }
+
+  void _itemPositionListener() {
+    final firstItem =
+        this._itemPositionsListener.itemPositions.value.firstOrNull;
+    widget.ui.sharedPreferences
+        ?.setInt("reference_scroll_index", firstItem?.index ?? 0);
+    widget.ui.sharedPreferences?.setDouble(
+        "reference_scroll_alignment", firstItem?.itemLeadingEdge ?? 0.0);
+  }
+
+  void onSearchChange(String value) {
+    if (value.isNotEmpty) {
+      try {
+        setState(() {
+          this._forceExpandCollapse = true;
+          this._regex = RegExp(value,
+              caseSensitive: false,
+              unicode: true,
+              multiLine: true,
+              dotAll: true);
+        });
+      } catch (_) {}
+    } else if (this._regex != null) {
+      setState(() {
+        this._regex = null;
+      });
+    }
   }
 }

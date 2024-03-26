@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UISettings extends ChangeNotifier {
-  final SharedPreferences? _sharedPreferences;
+  final SharedPreferences? sharedPreferences;
 
   static const double scaleMin = 0.5;
   static const double scaleMax = 1.8;
@@ -24,7 +24,7 @@ class UISettings extends ChangeNotifier {
   set scale(double value) {
     if (_scale == value) return;
     _scale = value;
-    _sharedPreferences?.setDouble("scale", value);
+    sharedPreferences?.setDouble("scale", value);
     notifyListeners();
   }
 
@@ -32,7 +32,7 @@ class UISettings extends ChangeNotifier {
   set tabIndex(int value) {
     if (this._tabIndex == value) return;
     this._tabIndex = value;
-    this._sharedPreferences?.setInt("tab_index", value);
+    this.sharedPreferences?.setInt("tab_index", value);
     /* No need for notifyListeners() - this is internal 
      * value put here just for saving into SharedPreferences */
   }
@@ -44,15 +44,15 @@ class UISettings extends ChangeNotifier {
     this._locale = value;
 
     if (value != null) {
-      this._sharedPreferences?.setString("language", value.languageCode);
+      this.sharedPreferences?.setString("language", value.languageCode);
       final country = value.countryCode;
       if (country != null) {
-        this._sharedPreferences?.setString("country", country);
+        this.sharedPreferences?.setString("country", country);
       } else {
-        this._sharedPreferences?.remove("country");
+        this.sharedPreferences?.remove("country");
       }
     } else {
-      this._sharedPreferences?.remove("locale");
+      this.sharedPreferences?.remove("locale");
     }
 
     /* After locale change we have to reload JSON with proper language */
@@ -76,9 +76,9 @@ class UISettings extends ChangeNotifier {
     this._selectedModules = encoded;
 
     if (value != null) {
-      this._sharedPreferences?.setString("modules", encoded);
+      this.sharedPreferences?.setString("modules", encoded);
     } else {
-      this._sharedPreferences?.remove("modules");
+      this.sharedPreferences?.remove("modules");
     }
 
     /* Load the new modules */
@@ -93,7 +93,7 @@ class UISettings extends ChangeNotifier {
       modules.add(module);
       final encoded = jsonEncode(modules);
       this._selectedModules = encoded;
-      this._sharedPreferences?.setString("modules", encoded);
+      this.sharedPreferences?.setString("modules", encoded);
 
       /* Load the new modules */
       this.reloadJson = true;
@@ -108,7 +108,7 @@ class UISettings extends ChangeNotifier {
       modules.removeWhere((m) => m == module);
       final encoded = jsonEncode(modules);
       this._selectedModules = encoded;
-      this._sharedPreferences?.setString("modules", encoded);
+      this.sharedPreferences?.setString("modules", encoded);
 
       /* Load the new modules */
       this.reloadJson = true;
@@ -121,16 +121,16 @@ class UISettings extends ChangeNotifier {
   set offline(bool value) {
     if (this._offline == value) return;
     this._offline = value;
-    this._sharedPreferences?.setBool("offline", value);
+    this.sharedPreferences?.setBool("offline", value);
 
     notifyListeners();
   }
 
-  UISettings(this._sharedPreferences)
+  UISettings(this.sharedPreferences)
       : _scale = 1.0,
         _tabIndex = 0,
         _offline = false {
-    final preferences = _sharedPreferences;
+    final preferences = sharedPreferences;
     if (preferences == null) {
       return;
     }
