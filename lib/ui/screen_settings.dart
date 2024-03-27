@@ -30,7 +30,7 @@ class SettingsDialog extends StatelessWidget {
           _LanguageConfig(textTheme, supportedLanguages),
           divider,
           _ScaleConfig(textTheme),
-          ...(kDebugMode ? [divider, _OfflineModeConfig(textTheme)] : [])
+          ...(!kReleaseMode ? [divider, _OfflineModeConfig(textTheme)] : [])
         ],
       ),
     );

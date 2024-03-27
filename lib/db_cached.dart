@@ -151,7 +151,7 @@ class DbCached {
 
     this._referencedFiles.add(filename);
 
-    if (kDebugMode) {
+    if (!kReleaseMode) {
       final bytes = await openFile(filename);
       if (bytes != null) {
         print("Loaded \"$filename\" from local filesystem");
@@ -195,7 +195,7 @@ class DbCached {
   Future<ImageProvider<Object>> openImage(String name, bool offline) async {
     this._referencedFiles.add(name);
 
-    if (kDebugMode) {
+    if (!kReleaseMode) {
       final bytes = await openFile(name);
       if (bytes != null) {
         print("Loaded \"$name\" from local filesystem");
