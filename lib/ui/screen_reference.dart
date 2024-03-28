@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:base85/base85.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -215,7 +213,7 @@ class ReferenceAssets {
   /// Inefficient but Dart has neither unsigned integers nor byte integers
   late List<int> _collapsed;
 
-  /// Set expansion state for specified [ReferenceChapter.id]
+  /// Set expansion state for chapter specified by [ReferenceChapter.expansionId]
   void updateExpanded(int id, bool set) {
     if (this.isExpanded(id) == set) return;
 
@@ -242,14 +240,13 @@ class ReferenceAssets {
         codec.encode(Uint8List.fromList(this._collapsed))));
   }
 
-  /// Get expansion state for specified [ReferenceChapter.id]
+  /// Get expansion state for chapter specified by [ReferenceChapter.expansionId]
   bool isExpanded(int id) {
     int index = id >> 3;
     int bitmask = 1 << (id & 0x7);
 
-    final expanded = index >= this._collapsed.length ||
+    return index >= this._collapsed.length ||
         (this._collapsed[index] & bitmask) == 0;
-    return expanded;
   }
 }
 
@@ -288,7 +285,7 @@ class ReferenceChapter {
       (id != null || depth.isTop()) ? GlobalKey() : null;
 
   static int idGen = 0;
-  final int chapterId = idGen++;
+  late int expansionId = (this.depth.isCollapsible()) ? ++idGen : 0;
 
   /// This chapter's format without search field highlight
   final List<TextFmtRange> formatNoHighlight = [];
@@ -301,7 +298,7 @@ class ReferenceChapter {
       {required bool offstage}) {
     if (offstage) return;
 
-    assets.updateExpanded(this.chapterId, value);
+    assets.updateExpanded(this.expansionId, value);
 
     try {
       if (value) {
@@ -762,8 +759,8 @@ class ReferenceChapter {
             // when searching for jump target's position)
             maintainState: true,
             onExpansionChanged: (value) =>
-                assets.updateExpanded(this.chapterId, value),
-            initiallyExpanded: assets.isExpanded(this.chapterId),
+                assets.updateExpanded(this.expansionId, value),
+            initiallyExpanded: assets.isExpanded(this.expansionId),
             tilePadding: const EdgeInsets.symmetric(horizontal: 4),
             title: Text.rich(span),
             children: widgets,
@@ -1040,53 +1037,57 @@ class _ReferenceState extends State<Reference>
           },
         ),
         Expanded(
-          child: ScrollablePositionedList.builder(
-            key: this._listKey,
-            initialScrollIndex: initialIndex,
-            initialAlignment: initialAlignment,
-            itemScrollController: this._itemScrollController,
-            itemPositionsListener: this._itemPositionsListener,
-            itemCount: ref.nested.length,
-            itemBuilder: (context, index) {
-              return ref.nested[index].recurseWidget(
-                context,
-                this._regex,
-                forceExpandCollapse,
-                ref.assets,
-                offstage: false,
-                onLinkTap: (String jumpTo) {
-                  final jumpTarget = widget.reference
-                      ?.jumpToChapter(context, index, jumpTo, this._regex);
+          child: ScrollbarTheme(
+            data: const ScrollbarThemeData(
+                interactive: false, radius: Radius.zero),
+            child: ScrollablePositionedList.builder(
+              key: this._listKey,
+              initialScrollIndex: initialIndex,
+              initialAlignment: initialAlignment,
+              itemScrollController: this._itemScrollController,
+              itemPositionsListener: this._itemPositionsListener,
+              itemCount: ref.nested.length,
+              itemBuilder: (context, index) {
+                return ref.nested[index].recurseWidget(
+                  context,
+                  this._regex,
+                  forceExpandCollapse,
+                  ref.assets,
+                  offstage: false,
+                  onLinkTap: (String jumpTo) {
+                    final jumpTarget = widget.reference
+                        ?.jumpToChapter(context, index, jumpTo, this._regex);
 
-                  if (jumpTarget != null) {
-                    setState(() {
-                      this._offstage = jumpTarget.offstage;
-                    });
-                    SchedulerBinding.instance.addPostFrameCallback((_) {
-                      final offset = jumpTarget.calculateOffset();
+                    if (jumpTarget != null) {
                       setState(() {
-                        this._offstage = null;
+                        this._offstage = jumpTarget.offstage;
                       });
+                      SchedulerBinding.instance.addPostFrameCallback((_) {
+                        final offset = jumpTarget.calculateOffset();
+                        setState(() {
+                          this._offstage = null;
+                        });
 
-                      final listHeight = (this
-                              ._listKey
-                              .currentContext
-                              ?.findRenderObject() as RenderBox?)
-                          ?.size
-                          .height;
+                        final listHeight = (this
+                                ._listKey
+                                .currentContext
+                                ?.findRenderObject() as RenderBox?)
+                            ?.size
+                            .height;
 
-                      if (listHeight != null) {
-                        // Do not use [ScrollablePositionedList.scrollTo],
-                        // it is broken when list has [ExpansionTile]
-                        this._itemScrollController.jumpTo(
-                            index: jumpTarget.index,
-                            alignment: offset / listHeight);
-                      }
-                    });
-                  }
-                },
-              ).$1;
-            },
+                        if (listHeight != null) {
+                          // Do not use [ScrollablePositionedList.scrollTo],
+                          // it is broken when list has [ExpansionTile]
+                          this._itemScrollController.jumpTo(
+                              index: jumpTarget.index,
+                              alignment: offset / listHeight);
+                        }
+                      });
+                    }
+                  },
+                ).$1;
+              },
+            ),
           ),
         ),
       ],
