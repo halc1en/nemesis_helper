@@ -6,6 +6,7 @@
     "fullscreen",
     "jsons",
     "Maximizable",
+    "microtask",
     "precache",
     "supabase"
   ],

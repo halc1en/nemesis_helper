@@ -65,6 +65,9 @@ dependencies:
   # For hyperlinks in Reference screen
   scrollable_positioned_list: ^0.3.8
 
+  # For saving binary data in SharedPreferences
+  base85: ^1.0.4
+
   package_info_plus: ^5.0.1
 
 dev_dependencies:

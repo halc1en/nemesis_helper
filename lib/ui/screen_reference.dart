@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:base85/base85.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -197,9 +198,11 @@ class ReferenceAssets {
       required this.icons,
       required SharedPreferences? sharedPreferences})
       : _sharedPreferences = sharedPreferences {
-    this._collapsed = List<int>.from(base64.decode(
+    this._collapsed = List<int>.from(codec.decode(
         sharedPreferences?.getString("reference_collapsed_chapters") ?? ""));
   }
+
+  final codec = Base85Codec(Alphabets.z85);
 
   /// Images that can be referenced from text
   final Map<String, JsonImage> images;
@@ -216,14 +219,16 @@ class ReferenceAssets {
   void updateExpanded(int id, bool set) {
     if (this.isExpanded(id) == set) return;
 
-    // base64 requires 8-bit chunk size
-    int index = id << 3;
+    int index = id >> 3;
     int bitmask = 1 << (id & 0x7);
 
     if (index >= this._collapsed.length) {
-      this
-          ._collapsed
-          .addAll(List<int>.filled(index + 1 - this._collapsed.length, 0));
+      // Round size to 4 (requirement of z85 encoding)
+      int toAdd = index + 1 - this._collapsed.length;
+      if (toAdd % 4 != 0) toAdd += 4 - toAdd % 4;
+
+      // Use 0 so that by default all items will be expanded
+      this._collapsed.addAll(List<int>.filled(toAdd, 0));
     }
 
     if (set) {
@@ -232,15 +237,14 @@ class ReferenceAssets {
       this._collapsed[index] |= bitmask;
     }
 
-    /// By default all items will be expanded
-    /// (also because base64 uses 0 by default)
-    this._sharedPreferences?.setString(
-        "reference_collapsed_chapters", base64.encode(this._collapsed));
+    Future(() async => await this._sharedPreferences?.setString(
+        "reference_collapsed_chapters",
+        codec.encode(Uint8List.fromList(this._collapsed))));
   }
 
   /// Get expansion state for specified [ReferenceChapter.id]
   bool isExpanded(int id) {
-    int index = id << 3;
+    int index = id >> 3;
     int bitmask = 1 << (id & 0x7);
 
     final expanded = index >= this._collapsed.length ||
