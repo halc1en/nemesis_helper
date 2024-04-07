@@ -2,7 +2,7 @@
     "description": "Nemesis",
     "reference": [
         {
-            "text": "TO WIN YOU MUST",
+            "text": "To win you must",
             "nested": [
                 {
                     "text": "Survive",
@@ -79,7 +79,7 @@
         },
         {
             "id": "objective",
-            "text": "OBJECTIVE CARD GOALS",
+            "text": "Objective card goals",
             "nested": [
                 {
                     "text": "![objective](#image_objectives)"

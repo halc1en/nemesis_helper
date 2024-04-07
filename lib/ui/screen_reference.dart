@@ -2,6 +2,7 @@ import 'package:base85/base85.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:quiver/time.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -46,12 +47,24 @@ class Nesting {
     return Nesting._styles![this._depth.clamp(0, Nesting._styles!.length - 1)];
   }
 
-  double textHeight(BuildContext context) {
+  double textHeight(BuildContext context, TextStyle? styleOverride) {
+    // Cannot use cached value if custom style is requested
+    if (styleOverride != null) {
+      return (TextPainter(
+        text: TextSpan(text: "T", style: styleOverride),
+        maxLines: 1,
+        textDirection: TextDirection.ltr,
+      )..layout())
+          .size
+          .height;
+    }
+
+    // Get height from cache
     if (Nesting._heights == null) {
       _initStyles(context);
       Nesting._heights = Nesting._styles!
-          .map((style) => TextPainter(
-                text: TextSpan(text: "T", style: style),
+          .map((depthStyle) => TextPainter(
+                text: TextSpan(text: "T", style: depthStyle),
                 maxLines: 1,
                 textDirection: TextDirection.ltr,
               ))
@@ -446,24 +459,29 @@ class ReferenceChapter {
   ///  - formatting according to [this.format]
   ///
   /// Returns rendered [TextSpan] and whether [regex] matches it
-  (TextSpan, bool) renderText(
-      BuildContext context,
-      List<InlineSpan>? nestedSpans,
-      RegExp? regex,
-      ReferenceAssets assets,
-      LinkTapCallback? onLinkTap) {
-    final text = this.text;
+  (TextSpan, bool) renderText(BuildContext context, RegExp? regex,
+      ReferenceAssets assets, LinkTapCallback? onLinkTap,
+      {List<InlineSpan>? children,
+      TextStyle? styleOverride,
+      String? tocPrefix}) {
+    // Render top-level headers in uppercase when not in table of contents
+    var text = (tocPrefix == null && this.depth.isTop())
+        ? this.text?.toUpperCase()
+        : this.text;
 
     // Shortcut for the simplest cases of plain text or no text
     if (text == null || regex == null && this.formatNoHighlight.isEmpty) {
       return (
         TextSpan(
           // Insert newline between different nesting levels
-          text: (text != null && (nestedSpans?.isNotEmpty ?? false))
-              ? "$text\n"
-              : text,
-          style: this.depth.textStyle(context),
-          children: nestedSpans,
+          // and add specified table of contents prefix
+          text: (text != null && (children?.isNotEmpty ?? false))
+              ? "${tocPrefix ?? ''}$text\n"
+              : (tocPrefix != null)
+                  ? "$tocPrefix$text"
+                  : text,
+          style: styleOverride ?? this.depth.textStyle(context),
+          children: children,
         ),
         false
       );
@@ -490,6 +508,12 @@ class ReferenceChapter {
     // And render requested format using [TextSpan] and [WidgetSpan]
     final spans = <InlineSpan>[];
 
+    if (tocPrefix != null) {
+      spans.add(TextSpan(
+          text: tocPrefix,
+          style: styleOverride ?? this.depth.textStyle(context)));
+    }
+
     TextFmtRange prevFmt = TextFmtRange(0);
     for (final fmt in format) {
       // Nothing to do if this image is rendered already
@@ -497,6 +521,7 @@ class ReferenceChapter {
         spans.add(_renderSingleSpan(
             context,
             text.substring(prevFmt.start, fmt.start),
+            styleOverride,
             prevFmt,
             assets,
             onLinkTap));
@@ -504,23 +529,29 @@ class ReferenceChapter {
       prevFmt = fmt;
     }
     // Show nested chapters after the end of [this.text]
-    spans.add(_renderSingleSpan(
-        context, text.substring(prevFmt.start), prevFmt, assets, onLinkTap,
-        children: nestedSpans));
+    spans.add(_renderSingleSpan(context, text.substring(prevFmt.start),
+        styleOverride, prevFmt, assets, onLinkTap,
+        children: children));
 
     return (TextSpan(children: spans), matches);
   }
 
   /// Render a single part of [this.text] that has the same formatting [fmt];
   /// this is a building block of rendering [this.text]
-  InlineSpan _renderSingleSpan(BuildContext context, String text,
-      TextFmtRange fmt, ReferenceAssets assets, LinkTapCallback? onLinkTap,
+  InlineSpan _renderSingleSpan(
+      BuildContext context,
+      String text,
+      TextStyle? styleOverride,
+      TextFmtRange fmt,
+      ReferenceAssets assets,
+      LinkTapCallback? onLinkTap,
       {List<InlineSpan>? children}) {
     final highlightColor = this.depth.highlightColor(context);
-    final textStyle = this.depth.textStyle(context).copyWith(
-        fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
-        fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
-        backgroundColor: fmt.highlight ? highlightColor : null);
+    final textStyle = styleOverride ??
+        this.depth.textStyle(context).copyWith(
+            fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
+            fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
+            backgroundColor: fmt.highlight ? highlightColor : null);
 
     // Paint image if needed
     Widget? imageWidget;
@@ -572,12 +603,12 @@ class ReferenceChapter {
           },
           image: jsonIcon.provider,
           filterQuality: FilterQuality.medium,
-          height: this.depth.textHeight(context),
+          height: this.depth.textHeight(context, styleOverride),
         );
       } else {
         imageWidget = Text(
             '"${imageString.substring(1)}" is not defined in JSON',
-            style: TextStyle(color: Theme.of(context).colorScheme.error));
+            style: errorStyle);
       }
     }
 
@@ -585,24 +616,14 @@ class ReferenceChapter {
       (null, null) => TextSpan(
           // Insert newline between different nesting levels
           text: (children != null) ? "$text\n" : text,
-          style: textStyle,
+          style: styleOverride ?? textStyle,
           children: children),
       (Widget image, null) => WidgetSpan(
-          baseline: TextBaseline.ideographic,
-          alignment: PlaceholderAlignment.baseline,
+          alignment: PlaceholderAlignment.bottom,
           child: image,
         ),
       (Widget? image, String link) => WidgetSpan(
-          baseline: (image != null)
-              ? TextBaseline.ideographic
-              : TextBaseline.alphabetic,
-          alignment: PlaceholderAlignment.baseline,
-          // Use hyperlink style
-          style: textStyle.copyWith(
-            decorationColor: Colors.lightBlue,
-            decoration: TextDecoration.underline,
-            decorationThickness: 1.5,
-          ),
+          alignment: PlaceholderAlignment.middle,
           // Capture finger taps/mouse clicks
           child: MouseRegion(
             cursor: SystemMouseCursors.click,
@@ -614,7 +635,13 @@ class ReferenceChapter {
                       TextSpan(
                         // Insert newline between different nesting levels
                         text: (children != null) ? "$text\n" : text,
-                        style: textStyle.copyWith(color: Colors.lightBlue),
+                        style: (styleOverride ?? textStyle).copyWith(
+                          color: Colors.lightBlue,
+                          // Use hyperlink style
+                          decorationColor: Colors.lightBlue,
+                          decoration: TextDecoration.underline,
+                          decorationThickness: 1.5,
+                        ),
                         children: children,
                       ),
                       // Workaround for https://github.com/flutter/flutter/issues/126962
@@ -641,7 +668,7 @@ class ReferenceChapter {
 
     // Render this node with children
     var (InlineSpan span, thisMatches) =
-        renderText(context, nestedSpans, regex, assets, onLinkTap);
+        renderText(context, regex, assets, onLinkTap, children: nestedSpans);
 
     // Add indentation for comments
     if (this.depth.isComment()) {
@@ -708,8 +735,7 @@ class ReferenceChapter {
       }
     }
 
-    final text = this.text;
-    if (text == null) {
+    if (this.text == null) {
       // [ExpansionTile] by definition requires some text in header
       // so use simple [Column] for children if text was not specified
 
@@ -726,15 +752,13 @@ class ReferenceChapter {
       );
     } else if (widgets.isEmpty) {
       // Use simple [Text] if there is nothing to expand in [ExpansionTile]
-      final (span, thisMatches) =
-          renderText(context, null, regex, assets, onLinkTap);
+      final (span, thisMatches) = renderText(context, regex, assets, onLinkTap);
       return (
         Text.rich(key: this.globalKey(offstage), span),
         thisMatches || nestedMatches
       );
     } else {
-      final (span, thisMatches) =
-          renderText(context, null, regex, assets, onLinkTap);
+      final (span, thisMatches) = renderText(context, regex, assets, onLinkTap);
 
       // Force expanding and collapsing when user changes search field
       // and do nothing otherwise
@@ -951,7 +975,9 @@ class Reference extends StatefulWidget {
 }
 
 class _ReferenceState extends State<Reference>
-    with AutomaticKeepAliveClientMixin<Reference> {
+    with
+        AutomaticKeepAliveClientMixin<Reference>,
+        SingleTickerProviderStateMixin {
   /// Saved state for when app is closed
   late TextEditingController _searchController;
   final _itemScrollController = ItemScrollController();
@@ -1038,6 +1064,7 @@ class _ReferenceState extends State<Reference>
                   shownChapters.firstOrNull?.index,
                   shownChapters.lastOrNull?.index
                 );
+                final textStyle = Theme.of(context).textTheme.titleMedium!;
 
                 return ref.nested.indexed.map((topChapter) {
                   final index = topChapter.$1;
@@ -1047,12 +1074,13 @@ class _ReferenceState extends State<Reference>
                       index <= lastShown);
 
                   return PopupMenuItem<int>(
+                    padding: const EdgeInsets.symmetric(vertical: 0.0),
                     value: index,
                     child: Text(
                       "${index + 1}. ${topChapter.$2.text ?? ''}",
                       style: !isOnScreen
-                          ? null
-                          : TextStyle(
+                          ? textStyle
+                          : textStyle.copyWith(
                               fontWeight: FontWeight.bold,
                               color: theme.colorScheme.primary),
                     ),

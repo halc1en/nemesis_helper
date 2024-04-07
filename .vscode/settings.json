@@ -8,7 +8,8 @@
     "Maximizable",
     "microtask",
     "precache",
-    "supabase"
+    "supabase",
+    "vsync"
   ],
   "cmake.sourceDirectory": "build/windows/_deps/corrosion-src/test/cpp2rust/cpp2rust",
   "sqltools.connections": [

@@ -125,9 +125,10 @@ class JsonData extends ChangeNotifier {
         await openJson(jsonName, canFail: false) as Map<String, dynamic>;
 
     // Get list of supported languages
-    final supportedLanguages = (mainJson['languages'] as List<dynamic>)
-        .map((e) => e as String)
-        .toList();
+    final supportedLanguages =
+        (mainJson['languages'] as List<dynamic>? ?? ["en"])
+            .map((e) => e as String)
+            .toList();
 
     // Get currently selected language
     final language = (supportedLanguages.contains(locale?.languageCode))
@@ -194,7 +195,7 @@ class JsonData extends ChangeNotifier {
     for (final (name, id) in (mainJson['icons'] as List<dynamic>? ?? [])
         .map((icon) => icon as Map<String, dynamic>)
         .nonNulls
-        .map((icon) => (icon['name'] as String, icon['id'] as String))) {
+        .map((icon) => (icon['path'] as String, icon['id'] as String))) {
       final provider = await openImage(name, offline);
       if (provider == null) continue;
       if (context.mounted) {
@@ -209,7 +210,7 @@ class JsonData extends ChangeNotifier {
     for (final (name, id) in (mainJson['images'] as List<dynamic>? ?? [])
         .map((image) => image as Map<String, dynamic>)
         .nonNulls
-        .map((image) => (image['name'] as String, image['id'] as String))) {
+        .map((image) => (image['path'] as String, image['id'] as String))) {
       images.addAll({id: JsonImage(provider: openImage(name, offline))});
     }
 

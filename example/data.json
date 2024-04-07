@@ -11,7 +11,7 @@
     "icons": [
         {
             "id": "icon_noise",
-            "name": "noise.webp"
+            "path": "noise.webp"
         }
     ]
 }

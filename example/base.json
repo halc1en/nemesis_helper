@@ -3,13 +3,13 @@
     "icons": [
         {
             "id": "icon_computer",
-            "name": "computer.webp"
+            "path": "computer.webp"
         }
     ],
     "images": [
         {
             "id": "image_objectives",
-            "name": "objectives.webp"
+            "path": "objectives.webp"
         }
     ]
 }

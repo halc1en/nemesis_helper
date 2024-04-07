@@ -6,7 +6,7 @@
     "reference": [
         {
             "id": "winning conditions",
-            "text": "УСЛОВИЯ БЕДЫ",
+            "text": "Условия беды",
             "nested": [
                 {
                     "text": "Выжить",
@@ -83,7 +83,7 @@
         },
         {
             "id": "objective",
-            "text": "КАРТЫ ЦЕЛИ",
+            "text": "Карты цели",
             "nested": [
                 {
                     "text": "![цель](#image_objectives)"
