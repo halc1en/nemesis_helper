@@ -320,24 +320,26 @@ class ReferenceChapter {
   }
 
   static final RegExp formattingRegex = RegExp(
-      // Escaping special characters
-      r'\\\*|\\\]|\\\[|\\!'
-      r'|'
-      // Inline images and icons
-      r'!\[(.*?[^\\]?)\]\((.+?)\)'
-      r'|'
-      // Links
-      r'\[(.*?[^\\])\]\((.+?)\)'
-      r'|'
-      // Bold and italic
-      r'\*\*|\*', unicode: true);
+    // Escaping special characters
+    r'\\\*|\\\]|\\\[|\\!'
+    r'|'
+    // Inline images and icons
+    r'!\[(.*?[^\\]?)\]\((.+?)\)'
+    r'|'
+    // Links
+    r'\[(.*?[^\\])\]\((.+?)\)'
+    r'|'
+    // Bold and italic
+    r'\*\*|\*',
+    unicode: true,
+  );
 
-  // Parse [text] and return the resulting string.
-  // Save all found formatting hints to [this.formatNoHighlight]
-  // Special characters:
-  //  **bold text**
-  //  *italic text*
-  //  [link text](link URL)
+  /// Parse [text] and return the resulting string.
+  /// Save all found formatting hints to [formatNoHighlight]
+  /// Special characters:
+  ///  **bold text**
+  ///  *italic text*
+  ///  [link text](link URL)
   String parseJsonString(
     String text, {
     int cursor = 0,
@@ -417,8 +419,8 @@ class ReferenceChapter {
 
   static const Indentation = 12.0;
 
-  // Update [format] by changing highlight to passed [highlight] value
-  // starting at [cursor]
+  /// Update [format] by changing highlight to passed [highlight] value
+  /// starting at [cursor]
   void updateFormatWithHighlight(List<TextFmtRange> format, int cursor,
       {required bool highlight}) {
     final int prevIndex = format.lastIndexWhere((s) => s.start <= cursor);
@@ -1001,6 +1003,8 @@ class _ReferenceState extends State<Reference>
     final ref = widget.reference;
     if (ref == null) return const Center(child: CircularProgressIndicator());
 
+    final theme = Theme.of(context);
+
     final forceExpandCollapse = this._forceExpandCollapse;
     this._forceExpandCollapse = false;
 
@@ -1017,24 +1021,71 @@ class _ReferenceState extends State<Reference>
     return Column(
       children: [
         if (this._offstage != null) this._offstage!,
-        TextField(
-          controller: this._searchController,
-          decoration: InputDecoration(
-            hintText: AppLocalizations.of(context).searchHint,
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: IconButton(
-              onPressed: () {
-                this._searchController.clear();
-                setState(() {
-                  this._regex = null;
-                });
+        Row(
+          children: [
+            // Table of contents
+            PopupMenuButton<int>(
+              tooltip: AppLocalizations.of(context).tableOfContents,
+              icon: const Icon(Icons.menu_book),
+              iconColor: theme.colorScheme.secondary,
+              onSelected: (int index) {
+                this._itemScrollController.jumpTo(index: index, alignment: 0.0);
               },
-              icon: const Icon(Icons.clear),
+              itemBuilder: (BuildContext context) {
+                var shownChapters =
+                    this._itemPositionsListener.itemPositions.value;
+                final (firstShown, lastShown) = (
+                  shownChapters.firstOrNull?.index,
+                  shownChapters.lastOrNull?.index
+                );
+
+                return ref.nested.indexed.map((topChapter) {
+                  final index = topChapter.$1;
+                  final bool isOnScreen = (firstShown != null &&
+                      lastShown != null &&
+                      index >= firstShown &&
+                      index <= lastShown);
+
+                  return PopupMenuItem<int>(
+                    value: index,
+                    child: Text(
+                      "${index + 1}. ${topChapter.$2.text ?? ''}",
+                      style: !isOnScreen
+                          ? null
+                          : TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary),
+                    ),
+                  );
+                }).toList();
+              },
             ),
-          ),
-          onChanged: (value) {
-            onSearchChange(value);
-          },
+
+            const VerticalDivider(thickness: 1.5, endIndent: 0.0, width: 1.5),
+
+            // Search field
+            Expanded(
+              child: TextField(
+                controller: this._searchController,
+                decoration: InputDecoration(
+                  hintText: AppLocalizations.of(context).searchHint,
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      this._searchController.clear();
+                      setState(() {
+                        this._regex = null;
+                      });
+                    },
+                    icon: const Icon(Icons.clear),
+                  ),
+                ),
+                onChanged: (value) {
+                  onSearchChange(value);
+                },
+              ),
+            ),
+          ],
         ),
         Expanded(
           child: ScrollbarTheme(
