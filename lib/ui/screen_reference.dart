@@ -1076,13 +1076,16 @@ class _ReferenceState extends State<Reference>
                   return PopupMenuItem<int>(
                     padding: const EdgeInsets.symmetric(vertical: 0.0),
                     value: index,
-                    child: Text(
-                      "${index + 1}. ${topChapter.$2.text ?? ''}",
-                      style: !isOnScreen
-                          ? textStyle
-                          : textStyle.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.primary),
+                    child: Text.rich(
+                      topChapter.$2
+                          .renderText(context, null, ref.assets, null,
+                              tocPrefix: "${index + 1}. ",
+                              styleOverride: !isOnScreen
+                                  ? textStyle
+                                  : textStyle.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: theme.colorScheme.primary))
+                          .$1,
                     ),
                   );
                 }).toList();
