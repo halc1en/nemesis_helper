@@ -144,8 +144,7 @@ class DbCached {
 
   /// Open JSON from network database (or from a local cache);
   /// on error will throw iff [canFail] is false
-  Future<Map<String, dynamic>?> openJson(String name,
-      {required bool canFail}) async {
+  Future<dynamic> openJson(String name, {required bool canFail}) async {
     Map<String, dynamic>? networkJsons = this._networkJsonsCache;
     final filename = "$name.json";
 
@@ -155,7 +154,7 @@ class DbCached {
       final bytes = await openFile(filename);
       if (bytes != null) {
         print("Loaded \"$filename\" from local filesystem");
-        return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+        return jsonDecode(utf8.decode(bytes));
       }
     }
 
@@ -169,7 +168,7 @@ class DbCached {
       }
       print(
           "Loaded \"$filename\" from local cache since network connection failed");
-      return jsonDecode(file) as Map<String, dynamic>;
+      return jsonDecode(file);
     }
 
     if (!networkJsons.containsKey(name)) {
@@ -178,7 +177,7 @@ class DbCached {
     }
 
     // Cache loaded JSON locally
-    final json = networkJsons[name] as Map<String, dynamic>;
+    final json = networkJsons[name];
     await this
         ._cacheJsons
         .put(filename, (const JsonEncoder.withIndent('\t')).convert(json));
@@ -187,7 +186,7 @@ class DbCached {
         .put(filename, DateTime.timestamp().toIso8601String());
 
     print("Loaded \"$filename\" from network database");
-    return Map<String, dynamic>.from(json);
+    return json;
   }
 
   /// Load image from network database (or from a local cache);
