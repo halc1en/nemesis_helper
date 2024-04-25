@@ -39,6 +39,11 @@ class Nesting {
   /// First two levels use [ExpansionTile] and can be collapsed
   bool isCollapsible() => this._depth <= 1;
 
+  /// Is rendered as [InlineSpan] (as opposed to [Widget]).
+  /// First two levels use [ExpansionTile] for collapsing
+  /// and the last level uses [Container] for padding.
+  bool isSpan() => !isCollapsible() && !isComment();
+
   Nesting next() => Nesting._explicit(this._depth + 1);
 
   /// Get text style for each of 0 to 4 allowed nesting depths in JSON
@@ -268,6 +273,7 @@ class ReferenceChapter {
     required String? text,
     required this.id,
     required this.depth,
+    required this.last,
     required this.nested,
   }) {
     if (text != null) this.text = parseJsonString(text);
@@ -281,6 +287,9 @@ class ReferenceChapter {
 
   /// This chapter's id (for hyperlinks to it)
   final String? id;
+
+  // Whether this chapter is the last child of it's parent
+  bool last;
 
   /// This chapter's global key (for hyperlinks to it)
   ///
@@ -469,17 +478,20 @@ class ReferenceChapter {
         ? this.text?.toUpperCase()
         : this.text;
 
+    // Insert newline between different nesting levels
+    // and between consequent "text" fields at the same level.
+    final bool needsNewline = text != null &&
+        ((children?.isNotEmpty ?? false) ||
+            (this.depth.isSpan() && !this.last && this.nested.isEmpty));
+
     // Shortcut for the simplest cases of plain text or no text
     if (text == null || regex == null && this.formatNoHighlight.isEmpty) {
       return (
         TextSpan(
-          // Insert newline between different nesting levels
-          // and add specified table of contents prefix
-          text: (text != null && (children?.isNotEmpty ?? false))
-              ? "${tocPrefix ?? ''}$text\n"
-              : (tocPrefix != null)
-                  ? "$tocPrefix$text"
-                  : text,
+          // Also add specified table of contents prefix and newline
+          text: (tocPrefix == null && text == null)
+              ? null
+              : "${tocPrefix ?? ''}${text ?? ''}${needsNewline ? '\n' : ''}",
           style: styleOverride ?? this.depth.textStyle(context),
           children: children,
         ),
@@ -504,6 +516,9 @@ class ReferenceChapter {
         return "";
       });
     }
+
+    // Also add newline
+    if (needsNewline) text = "$text\n";
 
     // And render requested format using [TextSpan] and [WidgetSpan]
     final spans = <InlineSpan>[];
@@ -549,8 +564,8 @@ class ReferenceChapter {
     final highlightColor = this.depth.highlightColor(context);
     final textStyle = styleOverride ??
         this.depth.textStyle(context).copyWith(
-            fontWeight: fmt.bold ? FontWeight.bold : FontWeight.normal,
-            fontStyle: fmt.italic ? FontStyle.italic : FontStyle.normal,
+            fontWeight: fmt.bold ? FontWeight.bold : null,
+            fontStyle: fmt.italic ? FontStyle.italic : null,
             backgroundColor: fmt.highlight ? highlightColor : null);
 
     // Paint image if needed
@@ -614,10 +629,7 @@ class ReferenceChapter {
 
     return switch ((imageWidget, fmt.link)) {
       (null, null) => TextSpan(
-          // Insert newline between different nesting levels
-          text: (children != null) ? "$text\n" : text,
-          style: styleOverride ?? textStyle,
-          children: children),
+          text: text, style: styleOverride ?? textStyle, children: children),
       (Widget image, null) => WidgetSpan(
           alignment: PlaceholderAlignment.bottom,
           child: image,
@@ -633,8 +645,7 @@ class ReferenceChapter {
                   ? image
                   : Text.rich(
                       TextSpan(
-                        // Insert newline between different nesting levels
-                        text: (children != null) ? "$text\n" : text,
+                        text: text,
                         style: (styleOverride ?? textStyle).copyWith(
                           color: Colors.lightBlue,
                           // Use hyperlink style
@@ -889,18 +900,25 @@ class ReferenceChapter {
     );
   }
 
-  factory ReferenceChapter.fromJson(Nesting depth, Map<String, dynamic> json) {
+  factory ReferenceChapter.fromJson(
+      Nesting depth, bool last, Map<String, dynamic> json) {
     final jsonText = json['text'];
+    final nestedJson = json['nested'] as List<dynamic>?;
+
+    final nested = nestedJson?.indexed
+            .map((child) => ReferenceChapter.fromJson(
+                depth.next(),
+                child.$1 + 1 == nestedJson.length,
+                child.$2 as Map<String, dynamic>))
+            .toList() ??
+        [];
 
     return ReferenceChapter(
       text: (jsonText is List) ? jsonText.join('\n') : (jsonText as String?),
       id: json['id'] as String?,
       depth: depth,
-      nested: (json['nested'] as List<dynamic>?)
-              ?.map((e) => ReferenceChapter.fromJson(
-                  depth.next(), e as Map<String, dynamic>))
-              .toList() ??
-          [],
+      last: last,
+      nested: nested,
     );
   }
 }
@@ -952,11 +970,17 @@ class ReferenceData {
       Map<String, JsonImage> images,
       Map<String, JsonIcon> icons,
       SharedPreferences? sharedPreferences) {
+    var nestedJson = json['reference'] as List<dynamic>? ?? [];
+
+    var nested = nestedJson.indexed
+        .map<ReferenceChapter>((child) => ReferenceChapter.fromJson(
+            const Nesting(),
+            child.$1 + 1 == nestedJson.length,
+            child.$2 as Map<String, dynamic>))
+        .toList();
+
     return ReferenceData(
-        nested: (json['reference'] as List<dynamic>? ?? [])
-            .map<ReferenceChapter>((json) => ReferenceChapter.fromJson(
-                const Nesting(), json as Map<String, dynamic>))
-            .toList(),
+        nested: nested,
         assets: ReferenceAssets(
             images: images,
             icons: icons,

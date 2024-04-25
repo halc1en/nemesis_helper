@@ -22,7 +22,7 @@ For simplicity it's recommended to put all localized text into corresponding loc
 
 ### Modules
 
-Try this in main 'data.json':
+Try this in main `data.json`:
 
 ```json
 "modules": [
@@ -91,13 +91,13 @@ First declare used images and icons in "images" and "icons" sections correspondi
 "icons": [
     {
         "id": "icon_computer",
-        "name": "computer.png"
+        "path": "computer.png"
     }
 ],
 "images": [
     {
         "id": "image_objectives",
-        "name": "objectives.webp"
+        "path": "objectives.webp"
     }
 ]
 ```
