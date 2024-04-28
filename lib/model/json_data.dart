@@ -211,7 +211,7 @@ class JsonData extends ChangeNotifier {
         .map((image) => image as Map<String, dynamic>)
         .nonNulls
         .map((image) => (image['path'] as String, image['id'] as String))) {
-      images.addAll({id: JsonImage(provider: openImage(name, offline))});
+      images.addAll({id: JsonImage(providerFuture: openImage(name, offline))});
     }
 
     return JsonData(
@@ -226,12 +226,18 @@ class JsonData extends ChangeNotifier {
 }
 
 class JsonImage {
-  const JsonImage({
-    required this.provider,
-  });
+  JsonImage({
+    required Future<ImageProvider?> providerFuture,
+  }) {
+    this.providerFuture =
+        providerFuture.then((provider) => this.provider = provider);
+  }
 
   /// Provider to load the image
-  final Future<ImageProvider?> provider;
+  late Future<ImageProvider?> providerFuture;
+
+  /// Set after the image is loaded
+  ImageProvider? provider;
 }
 
 class JsonIcon {

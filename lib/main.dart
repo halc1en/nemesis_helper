@@ -163,6 +163,7 @@ class _AppLoaderState extends State<AppLoader> {
                 textTheme: exo2textTheme,
                 listTileTheme: const ListTileThemeData().copyWith(dense: true),
                 expansionTileTheme: const ExpansionTileThemeData().copyWith(
+                  tilePadding: const EdgeInsets.all(0),
                   expandedAlignment: Alignment.centerLeft,
                   collapsedShape: const Border.fromBorderSide(BorderSide.none),
                   shape: const Border.fromBorderSide(BorderSide.none),

@@ -104,21 +104,13 @@ First declare used images and icons in "images" and "icons" sections correspondi
 
 `"path"` stands for path to file in backend.  Then use Markdown syntax to reference them by `"id"`: `![label](#image_or_icon_id)`
 
-Icons are rendered with the same height as text surrounding them, while images try to fill the screen without cropping.  Label is not rendered but is taken into account when searching text.
+Images can have additional attributes specified like this: `![label](#image_or_icon_id){ float=left width=20 }`.  Supported attributes are:
+- `float`: float the image to the left or the right
+- `width`: width to render the image with
+
+Icons are rendered with the same height as text surrounding them, while images by default try to fill the screen without cropping.  Label is not rendered but is taken into account when searching text.
 
 ## TODO
-
-### Framework
-
-- [x] Localization framework
-- [x] Styling settings
-- [x] Running on Windows
-- [x] Running on Android
-- [x] Running on Web
-- [x] Local development from user folder
-- [x] Supabase! network connection
-- [x] Web instance
-- [x] Choose english by default if system language is not supported
 
 ### Design
 
@@ -129,20 +121,9 @@ Icons are rendered with the same height as text surrounding them, while images t
 ### Rules reference
 
 - [ ] Fill reference data in database
-- [x] Fetch reference to in-memory format (network first, local backup option)
-- [x] Render reference
-- [ ] Bookmarking reference entries
-- [x] Filtering reference entries
-- [x] JSON with hierarchy
-- [x] Inline markup in JSON for bold, italic
-- [x] Hyperlinks in JSON ("id" field and inline links to it)
-- [x] Lists in JSON with modifiable icon
-- [x] Modular JSON
-- [x] Images/icons in JSON
 
 ### Game session
 
-- [x] Bottom navigation bar: Reference (done) + Game (new)
 - [ ] Session tokens in database
 - [ ] Add goals to database
 - [ ] Add characters to database

@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:base85/base85.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -45,6 +47,12 @@ class Nesting {
   bool isSpan() => !isCollapsible() && !isComment();
 
   Nesting next() => Nesting._explicit(this._depth + 1);
+
+  EdgeInsets indentation() {
+    if (this.isComment()) return const EdgeInsets.only(left: 24, right: 4);
+    if (!this.isCollapsible()) return const EdgeInsets.only(left: 12, right: 4);
+    return const EdgeInsets.symmetric(horizontal: 4);
+  }
 
   /// Get text style for each of 0 to 4 allowed nesting depths in JSON
   TextStyle textStyle(BuildContext context) {
@@ -107,14 +115,59 @@ class Nesting {
             shadows: [Shadow(color: Colors.blue.shade400, blurRadius: 5)],
             height: 1),
         textTheme.bodyLarge!.copyWith(
-            color: Colors.blue,
+            color: Colors.blue.shade400,
             shadows: [Shadow(color: Colors.blue.shade600, blurRadius: 2)]),
-        textTheme.bodyMedium!,
+        textTheme.bodyMedium!.copyWith(color: Colors.blue.shade50),
         labelMedium.copyWith(
             color: Color.lerp(labelMedium.color, Colors.black, 0.2),
             fontStyle: FontStyle.italic,
             fontSize: labelMedium.fontSize! * 1.1),
       ];
+    }
+  }
+}
+
+enum ImageFloat {
+  none,
+  left,
+  right,
+}
+
+class ParsedImage {
+  /// Link text as specified in JSON
+  final String? link;
+
+  /// Whether to float this image to left/right of text after it
+  ImageFloat float;
+
+  /// Requested width of this image in logical pixels
+  int? widthLogical;
+
+  static final RegExp formattingRegex = RegExp(
+    // Width in millimeters
+    r'(width)=(\d+)'
+    r'|'
+    // Float to left or right
+    r'(float)=(left|right)',
+    unicode: true,
+  );
+
+  ParsedImage({this.link, String? attributes})
+      : this.float = ImageFloat.none,
+        this.widthLogical = null {
+    if (attributes == null) return;
+
+    for (final Match m in formattingRegex.allMatches(attributes)) {
+      if (m[1] == "width") {
+        final widthMm = int.tryParse(m[2]!);
+        if (widthMm != null) {
+          this.widthLogical = 38 * widthMm ~/ 10;
+        }
+      } else if (m[3] == "float") {
+        this.float = m[4] == "left" ? ImageFloat.left : ImageFloat.right;
+      } else {
+        print("Not matched: ${m[0]}");
+      }
     }
   }
 }
@@ -134,7 +187,7 @@ class TextFmtRange {
   bool italic;
   bool highlight;
   String? link;
-  String? image;
+  ParsedImage? image;
 
   TextFmtRange copyWith({
     int? start,
@@ -142,7 +195,7 @@ class TextFmtRange {
     bool? italic,
     bool? highlight,
     String? link,
-    String? image,
+    ParsedImage? image,
   }) {
     return TextFmtRange(
       start ?? this.start,
@@ -346,7 +399,7 @@ class ReferenceChapter {
     r'\\\*|\\\]|\\\[|\\!'
     r'|'
     // Inline images and icons
-    r'!\[(.*?[^\\]?)\]\((.+?)\)'
+    r'!\[(.*?[^\\]?)\]\((.+?)\)(\{(.+?)\})?'
     r'|'
     // Links
     r'\[(.*?[^\\])\]\((.+?)\)'
@@ -368,7 +421,7 @@ class ReferenceChapter {
     bool bold = false,
     bool italic = false,
     String? link,
-    String? image,
+    ParsedImage? image,
   }) {
     void saveFormatting() {
       this.formatNoHighlight.add(TextFmtRange(cursor,
@@ -395,8 +448,8 @@ class ReferenceChapter {
         default:
           switch (m[0]![0]) {
             case "!":
-              /* Inline image: ![text for searching](URL) */
-              image = m[2];
+              /* Inline image: ![text for searching](URL){ optional=attributes } */
+              image = ParsedImage(link: m[2], attributes: m[4]);
               saveFormatting();
 
               final parsedImageText = parseJsonString(m[1] ?? "",
@@ -413,10 +466,10 @@ class ReferenceChapter {
               return parsedImageText;
             case "[":
               /* Link: [link text](URL) */
-              link = m[4];
+              link = m[6];
               saveFormatting();
 
-              final parsedLinkText = parseJsonString(m[3] ?? "",
+              final parsedLinkText = parseJsonString(m[5] ?? "",
                   cursor: cursor,
                   bold: bold,
                   italic: italic,
@@ -438,8 +491,6 @@ class ReferenceChapter {
       return n;
     });
   }
-
-  static const Indentation = 12.0;
 
   /// Update [format] by changing highlight to passed [highlight] value
   /// starting at [cursor]
@@ -463,104 +514,38 @@ class ReferenceChapter {
     }
   }
 
-  /// Renders [this.text] while taking into account:
-  ///  - highlighting [regex] matches
-  ///  - formatting according to [this.format]
-  ///
-  /// Returns rendered [TextSpan] and whether [regex] matches it
-  (TextSpan, bool) renderText(BuildContext context, RegExp? regex,
-      ReferenceAssets assets, LinkTapCallback? onLinkTap,
-      {List<InlineSpan>? children,
-      TextStyle? styleOverride,
-      String? tocPrefix}) {
-    // Render top-level headers in uppercase when not in table of contents
-    var text = (tocPrefix == null && this.depth.isTop())
-        ? this.text?.toUpperCase()
-        : this.text;
+  Widget _scaledImage(BuildContext context, TextFmtRange fmt,
+      String imageString, ImageProvider provider, TextStyle errorStyle) {
+    // Determine image size based on actual screen size
+    final screenSize = MediaQuery.sizeOf(context);
+    final imageWidth = fmt.image!.widthLogical ?? screenSize.width;
 
-    // Insert newline between different nesting levels
-    // and between consequent "text" fields at the same level.
-    final bool needsNewline = text != null &&
-        ((children?.isNotEmpty ?? false) ||
-            (this.depth.isSpan() && !this.last && this.nested.isEmpty));
-
-    // Shortcut for the simplest cases of plain text or no text
-    if (text == null || regex == null && this.formatNoHighlight.isEmpty) {
-      return (
-        TextSpan(
-          // Also add specified table of contents prefix and newline
-          text: (tocPrefix == null && text == null)
-              ? null
-              : "${tocPrefix ?? ''}${text ?? ''}${needsNewline ? '\n' : ''}",
-          style: styleOverride ?? this.depth.textStyle(context),
-          children: children,
-        ),
-        false
-      );
-    }
-
-    // Create a local copy of formatting and add all search matches to it
-    final format = [...this.formatNoHighlight.map((fmt) => fmt.clone())];
-
-    bool matches = false;
-    if (regex != null) {
-      int cursor = 0;
-      text.splitMapJoin(regex, onMatch: (m) {
-        matches = true;
-        updateFormatWithHighlight(format, cursor, highlight: true);
-        cursor = m.end;
-        return "";
-      }, onNonMatch: (n) {
-        updateFormatWithHighlight(format, cursor, highlight: false);
-        cursor += n.length;
-        return "";
-      });
-    }
-
-    // Also add newline
-    if (needsNewline) text = "$text\n";
-
-    // And render requested format using [TextSpan] and [WidgetSpan]
-    final spans = <InlineSpan>[];
-
-    if (tocPrefix != null) {
-      spans.add(TextSpan(
-          text: tocPrefix,
-          style: styleOverride ?? this.depth.textStyle(context)));
-    }
-
-    TextFmtRange prevFmt = TextFmtRange(0);
-    for (final fmt in format) {
-      // Nothing to do if this image is rendered already
-      if (fmt.image == null || fmt.image != prevFmt.image) {
-        spans.add(_renderSingleSpan(
-            context,
-            text.substring(prevFmt.start, fmt.start),
-            styleOverride,
-            prevFmt,
-            assets,
-            onLinkTap));
-      }
-      prevFmt = fmt;
-    }
-    // Show nested chapters after the end of [this.text]
-    spans.add(_renderSingleSpan(context, text.substring(prevFmt.start),
-        styleOverride, prevFmt, assets, onLinkTap,
-        children: children));
-
-    return (TextSpan(children: spans), matches);
+    return Image(
+      errorBuilder: (context, err, _) {
+        return Text("Error loading ${imageString.substring(1)}: $err",
+            style: errorStyle);
+      },
+      image: ResizeImage(
+        provider,
+        policy: ResizeImagePolicy.fit,
+        allowUpscaling: false,
+        width: imageWidth.round(),
+        height: screenSize.height.round(),
+      ),
+      filterQuality: FilterQuality.medium,
+      fit: BoxFit.contain,
+    );
   }
 
-  /// Render a single part of [this.text] that has the same formatting [fmt];
-  /// this is a building block of rendering [this.text]
+  /// Render a single part of [ReferenceChapter.text] that has the same formatting [fmt];
+  /// this is a building block of rendering [ReferenceChapter.text]
   InlineSpan _renderSingleSpan(
       BuildContext context,
       String text,
       TextStyle? styleOverride,
       TextFmtRange fmt,
       ReferenceAssets assets,
-      LinkTapCallback? onLinkTap,
-      {List<InlineSpan>? children}) {
+      LinkTapCallback? onLinkTap) {
     final highlightColor = this.depth.highlightColor(context);
     final textStyle = styleOverride ??
         this.depth.textStyle(context).copyWith(
@@ -570,46 +555,33 @@ class ReferenceChapter {
 
     // Paint image if needed
     Widget? imageWidget;
-    final imageString = fmt.image;
+    final imageString = fmt.image?.link;
     if (imageString != null) {
       final errorStyle = TextStyle(color: Theme.of(context).colorScheme.error);
       final jsonImage = assets.images[imageString.substring(1)];
       final jsonIcon = assets.icons[imageString.substring(1)];
 
       if (jsonImage != null) {
-        imageWidget = FutureBuilder(
-          future: jsonImage.provider,
-          builder: (context, snapshot) {
-            final imageProvider = snapshot.data;
-            if (imageProvider == null) {
-              if (snapshot.hasError) {
-                return Text(
-                    "Error loading ${imageString.substring(1)} provider: ${snapshot.error}",
-                    style: errorStyle);
-              }
-              return const SizedBox.shrink();
-            }
+        final provider = jsonImage.provider;
+        imageWidget = (provider != null)
+            ? _scaledImage(context, fmt, imageString, provider, errorStyle)
+            : FutureBuilder(
+                future: jsonImage.providerFuture,
+                builder: (context, snapshot) {
+                  final provider = snapshot.data;
+                  if (provider == null) {
+                    if (snapshot.hasError) {
+                      return Text(
+                          "Error loading ${imageString.substring(1)} provider: ${snapshot.error}",
+                          style: errorStyle);
+                    }
+                    return const SizedBox.shrink();
+                  }
 
-            // Determine image size based on actual screen size
-            final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
-            final screenSize = MediaQuery.sizeOf(context);
-
-            return Image(
-              errorBuilder: (context, err, _) {
-                return Text("Error loading ${imageString.substring(1)}: $err",
-                    style: errorStyle);
-              },
-              image: ResizeImage(
-                imageProvider,
-                policy: ResizeImagePolicy.fit,
-                width: (screenSize.width * devicePixelRatio).round(),
-                height: (screenSize.height * devicePixelRatio).round(),
-              ),
-              filterQuality: FilterQuality.medium,
-              fit: BoxFit.contain,
-            );
-          },
-        );
+                  return _scaledImage(
+                      context, fmt, imageString, provider, errorStyle);
+                },
+              );
       } else if (jsonIcon != null) {
         imageWidget = Image(
           errorBuilder: (context, err, _) {
@@ -628,8 +600,7 @@ class ReferenceChapter {
     }
 
     return switch ((imageWidget, fmt.link)) {
-      (null, null) => TextSpan(
-          text: text, style: styleOverride ?? textStyle, children: children),
+      (null, null) => TextSpan(text: text, style: styleOverride ?? textStyle),
       (Widget image, null) => WidgetSpan(
           alignment: PlaceholderAlignment.bottom,
           child: image,
@@ -653,7 +624,6 @@ class ReferenceChapter {
                           decoration: TextDecoration.underline,
                           decorationThickness: 1.5,
                         ),
-                        children: children,
                       ),
                       // Workaround for https://github.com/flutter/flutter/issues/126962
                       textScaler: TextScaler.noScaling,
@@ -664,131 +634,162 @@ class ReferenceChapter {
     };
   }
 
-  /// Render this chapter as [InlineSpan] suitable for
-  /// embedding into [RichText] widget.
-  (InlineSpan, bool) recurseSpan(BuildContext context, RegExp? regex,
-      ReferenceAssets assets, LinkTapCallback? onLinkTap, bool offstage) {
-    // Recursively walk children
-    var (nestedSpans, nestedMatches) = this
-        .nested
-        .map((ReferenceChapter child) =>
-            child.recurseSpan(context, regex, assets, onLinkTap, offstage))
-        .fold<(List<InlineSpan>?, bool)>((null, false), (prev, element) {
-      return ((prev.$1 ?? [])..add(element.$1), prev.$2 || element.$2);
-    });
+  /// Renders [ReferenceChapter.text] while taking into account:
+  ///  - highlighting [regex] matches
+  ///  - formatting according to [ReferenceChapter.format]
+  ///
+  /// Returns rendered [Widget] and whether [regex] matches it
+  (Widget, bool) renderText(BuildContext context, RegExp? regex,
+      ReferenceAssets assets, LinkTapCallback? onLinkTap, GlobalKey? key,
+      {TextStyle? styleOverride, String? tocPrefix}) {
+    // Render top-level headers in uppercase when not in table of contents
+    final text = (tocPrefix == null && this.depth.isTop())
+        ? this.text?.toUpperCase()
+        : this.text;
 
-    // Render this node with children
-    var (InlineSpan span, thisMatches) =
-        renderText(context, regex, assets, onLinkTap, children: nestedSpans);
-
-    // Add indentation for comments
-    if (this.depth.isComment()) {
-      span = WidgetSpan(
-        child: Container(
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.only(left: Indentation),
-          child: Text.rich(key: this.globalKey(offstage), span),
+    // Shortcut for the simplest cases of plain text or no text
+    if (text == null) return (const SizedBox.shrink(), false);
+    if (regex == null && this.formatNoHighlight.isEmpty) {
+      final widget = Container(
+        alignment: Alignment.centerLeft,
+        padding: this.depth.indentation(),
+        child: Text(
+          // Also add specified table of contents prefix
+          "${tocPrefix ?? ''}$text",
+          key: key,
+          style: styleOverride ?? this.depth.textStyle(context),
         ),
       );
-    } else {
-      final globalKey = this.globalKey(offstage);
-      if (globalKey != null) {
-        // Create a [Widget] to assign key to
-        span = WidgetSpan(child: Text.rich(key: globalKey, span));
-      }
+      return (widget, false);
     }
 
-    return (span, nestedMatches || thisMatches);
+    // Create a local copy of formatting and add all search matches to it
+    final List<TextFmtRange> format = [];
+    if ((this.formatNoHighlight.firstOrNull?.start ?? 1) > 0) {
+      format.add(TextFmtRange(0));
+    }
+    format.addAll(this.formatNoHighlight.map((fmt) => fmt.clone()));
+    if (format.last.start < text.length) {
+      format.add(TextFmtRange(text.length));
+    }
+
+    bool matches = false;
+    if (regex != null) {
+      int cursor = 0;
+      text.splitMapJoin(regex, onMatch: (m) {
+        matches = true;
+        updateFormatWithHighlight(format, cursor, highlight: true);
+        cursor = m.end;
+        return "";
+      }, onNonMatch: (n) {
+        updateFormatWithHighlight(format, cursor, highlight: false);
+        cursor += n.length;
+        return "";
+      });
+    }
+
+    // And render requested format using [TextSpan] and [WidgetSpan]
+    final spans = <InlineSpan>[];
+    final spansLeft = <InlineSpan>[];
+    final spansRight = <InlineSpan>[];
+
+    if (tocPrefix != null) {
+      spans.add(TextSpan(
+          text: tocPrefix,
+          style: styleOverride ?? this.depth.textStyle(context)));
+    }
+
+    TextFmtRange fmt = format.first;
+    for (final nextFmt in format.skip(1)) {
+      final span = _renderSingleSpan(
+          context,
+          text.substring(fmt.start, nextFmt.start),
+          styleOverride,
+          fmt,
+          assets,
+          onLinkTap);
+
+      // Take "float" image attribute into account
+      switch (fmt.image?.float) {
+        case ImageFloat.left:
+          spansLeft.add(span);
+          break;
+        case ImageFloat.right:
+          spansRight.add(span);
+          break;
+        default:
+          spans.add(span);
+          break;
+      }
+      fmt = nextFmt;
+    }
+
+    Widget widget = Text.rich(key: key, TextSpan(children: spans));
+
+    if (spansLeft.isNotEmpty || spansRight.isNotEmpty) {
+      widget = Row(children: [
+        if (spansLeft.isNotEmpty) Text.rich(TextSpan(children: spansLeft)),
+        Expanded(child: widget),
+        if (spansRight.isNotEmpty) Text.rich(TextSpan(children: spansRight)),
+      ]);
+    }
+
+    widget = Container(
+      key: key,
+      alignment: Alignment.centerLeft,
+      padding: this.depth.indentation(),
+      child: widget,
+    );
+    return (widget, matches);
   }
 
-  /// Render this chapter as widget
+  /// Render this chapter together with it's children as widget
   ///
-  /// Set [fake] to build yet another instance of the widget; useful
-  /// to calculate it's dimensions when jumping through links.
-  (Widget, bool) recurseWidget(BuildContext context, RegExp? regex,
+  /// Set [offstage] to build yet another instance of the widget; useful
+  /// for calculating dimensions when jumping through links.
+  (Widget, bool) renderChapter(BuildContext context, RegExp? regex,
       bool forceExpandCollapse, ReferenceAssets assets,
       {required bool offstage, required LinkTapCallback? onLinkTap}) {
-    final List<Widget> widgets;
+    final List<Widget> nestedWidgets;
     bool nestedMatches;
 
     // Recursively walk children
-    if (depth.next().isCollapsible()) {
-      // Use [ExpansionTile] for collapsible chapters
-      (widgets, nestedMatches) = this
-          .nested
-          .map((ReferenceChapter child) => child.recurseWidget(
-              context, regex, forceExpandCollapse, assets,
-              offstage: offstage, onLinkTap: onLinkTap))
-          .fold<(List<Widget>, bool)>(([], false), (prev, element) {
-        return (prev.$1..add(element.$1), prev.$2 || element.$2);
-      });
-    } else {
-      // Otherwise use [Text.rich]
-      final List<InlineSpan> nestedSpans;
-      (nestedSpans, nestedMatches) = this
-          .nested
-          .map((ReferenceChapter child) =>
-              child.recurseSpan(context, regex, assets, onLinkTap, offstage))
-          .fold<(List<InlineSpan>, bool)>(([], false), (prev, element) {
-        return (prev.$1..add(element.$1), prev.$2 || element.$2);
-      });
+    (nestedWidgets, nestedMatches) = this
+        .nested
+        .map((ReferenceChapter child) => child.renderChapter(
+            context, regex, forceExpandCollapse, assets,
+            offstage: offstage, onLinkTap: onLinkTap))
+        .fold<(List<Widget>, bool)>(([], false), (prev, element) {
+      return (prev.$1..add(element.$1), prev.$2 || element.$2);
+    });
 
-      widgets = [];
-      if (nestedSpans.isNotEmpty) {
-        widgets.add(Container(
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
-          child: Text.rich(
-            TextSpan(children: nestedSpans),
-            textAlign: TextAlign.justify,
-          ),
-        ));
-      }
-    }
+    final (widget, thisMatches) = (this.text != null)
+        ? renderText(context, regex, assets, onLinkTap, null)
+        : (null, false);
 
-    if (this.text == null) {
-      // [ExpansionTile] by definition requires some text in header
-      // so use simple [Column] for children if text was not specified
+    // Make sure that all [ScrollablePositionedList] children have
+    // global key.  It's necessary to avoid needless full rebuilds
+    // (including state!!) for it's jumpTo() method.
+    final globalKey = this.globalKey(offstage);
+    switch ((
+      widget,
+      nestedWidgets.isEmpty ? null : nestedWidgets,
+      this.depth.isCollapsible()
+    )) {
+      case (Widget widget, List<Widget> nestedWidgets, true):
+        // Force expanding and collapsing when user changes search field
+        // and do nothing otherwise
+        final forcedExpansion = nestedMatches || thisMatches;
+        if (forceExpandCollapse) {
+          this.setExpanded(forcedExpansion, assets, offstage: offstage);
+        }
+        if (!offstage) {
+          this._expansionController ??= ExpansionTileController();
+        }
 
-      if (widgets.length == 1) {
-        return (widgets.first, nestedMatches);
-      }
-
-      return (
-        Padding(
-            key: this.globalKey(offstage),
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Column(children: [...widgets])),
-        nestedMatches
-      );
-    } else if (widgets.isEmpty) {
-      // Use simple [Text] if there is nothing to expand in [ExpansionTile]
-      final (span, thisMatches) = renderText(context, regex, assets, onLinkTap);
-      return (
-        Text.rich(key: this.globalKey(offstage), span),
-        thisMatches || nestedMatches
-      );
-    } else {
-      final (span, thisMatches) = renderText(context, regex, assets, onLinkTap);
-
-      // Force expanding and collapsing when user changes search field
-      // and do nothing otherwise
-      final forcedExpansion = nestedMatches || thisMatches;
-      if (forceExpandCollapse) {
-        this.setExpanded(forcedExpansion, assets, offstage: offstage);
-      }
-      if (!offstage) {
-        this._expansionController ??= ExpansionTileController();
-      }
-
-      return (
-        SizedBox(
-          // Assign global key here to make sure that all
-          // [ScrollablePositionedList] children have one.
-          // It's necessary to avoid needless full rebuilds
-          // (including state!!) for it's jumpTo() method.
-          key: this.globalKey(offstage),
-          child: ExpansionTile(
+        return (
+          ExpansionTile(
+            key: globalKey,
             controller: this.expansionController(offstage),
             // To make sure children widgets are always available for offset
             // calculation and expansion (it's easier this way than expanding
@@ -798,14 +799,43 @@ class ReferenceChapter {
             onExpansionChanged: (value) =>
                 assets.updateExpanded(this.expansionId, value),
             initiallyExpanded: assets.isExpanded(this.expansionId),
-            tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-            title: Text.rich(span),
-            children: widgets,
+            title: widget,
+            children: nestedWidgets,
           ),
-        ),
-        nestedMatches || thisMatches
-      );
+          nestedMatches || thisMatches
+        );
+      case (Widget widget, List<Widget> nestedWidgets, false):
+        return (
+          Column(key: globalKey, children: [widget, ...nestedWidgets]),
+          nestedMatches || thisMatches
+        );
+      case (Widget widget, null, _):
+        // Use simple [Text] if possible
+        return (
+          (globalKey == null)
+              ? widget
+              : SizedBox(key: globalKey, child: widget),
+          thisMatches,
+        );
+      case (null, List<Widget> nestedWidgets, _):
+        // [ExpansionTile] by definition requires some text in header
+        // so use simple [Column] instead
+        final Widget chapter;
+        switch ((nestedWidgets.length, globalKey)) {
+          case (1, null):
+            chapter = nestedWidgets.first;
+          case (1, GlobalKey _):
+            chapter = SizedBox(key: globalKey, child: nestedWidgets.first);
+          case _:
+            chapter = Column(key: globalKey, children: [...nestedWidgets]);
+        }
+        return (chapter, nestedMatches);
+      case (null, null, _):
+        return (SizedBox.shrink(key: globalKey), false);
     }
+
+    // Silence the compiler
+    throw Exception("Unhandled case in chapter rendering");
   }
 
   /// Jump or scroll to this chapter if it matches [chapterId].
@@ -892,7 +922,7 @@ class ReferenceChapter {
         index: index,
         offstage: Offstage(
           child: topChapter
-              .recurseWidget(context, regex, true, assets,
+              .renderChapter(context, regex, true, assets,
                   offstage: true, onLinkTap: null)
               .$1,
         ),
@@ -937,7 +967,7 @@ class ReferenceData {
     return this
         .nested
         .map((child) => child
-            .recurseWidget(context, regex, forceExpandCollapse, this.assets,
+            .renderChapter(context, regex, forceExpandCollapse, this.assets,
                 offstage: false, onLinkTap: onLinkTap)
             .$1)
         .toList();
@@ -1100,17 +1130,15 @@ class _ReferenceState extends State<Reference>
                   return PopupMenuItem<int>(
                     padding: const EdgeInsets.symmetric(vertical: 0.0),
                     value: index,
-                    child: Text.rich(
-                      topChapter.$2
-                          .renderText(context, null, ref.assets, null,
-                              tocPrefix: "${index + 1}. ",
-                              styleOverride: !isOnScreen
-                                  ? textStyle
-                                  : textStyle.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: theme.colorScheme.primary))
-                          .$1,
-                    ),
+                    child: topChapter.$2
+                        .renderText(context, null, ref.assets, null, null,
+                            tocPrefix: "${index + 1}. ",
+                            styleOverride: !isOnScreen
+                                ? textStyle
+                                : textStyle.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.colorScheme.primary))
+                        .$1,
                   );
                 }).toList();
               },
@@ -1154,7 +1182,7 @@ class _ReferenceState extends State<Reference>
               itemPositionsListener: this._itemPositionsListener,
               itemCount: ref.nested.length,
               itemBuilder: (context, index) {
-                return ref.nested[index].recurseWidget(
+                return ref.nested[index].renderChapter(
                   context,
                   this._regex,
                   forceExpandCollapse,

@@ -9,6 +9,7 @@
     "microtask",
     "precache",
     "supabase",
+    "Upscaling",
     "vsync"
   ],
   "cmake.sourceDirectory": "build/windows/_deps/corrosion-src/test/cpp2rust/cpp2rust",
