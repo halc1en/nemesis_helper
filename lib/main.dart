@@ -33,6 +33,8 @@ void main() async {
     await windowManager.center();
   }
 
+  SharedPreferences.setPrefix('');
+
   runApp(AppLoader(await SharedPreferences.getInstance()));
 }
 
@@ -194,7 +196,9 @@ class _AppLoaderState extends State<AppLoader> {
                       child: child ?? const Text("No MediaQuery child found")),
                 );
               },
-              home: SafeArea(child: ScaffoldWithTabs(ui: ui, error: error)),
+              home: SafeArea(
+                  child: ScaffoldWithTabs(
+                      ui: ui, tabs: jsonData?.tabs, error: error)),
             );
           },
         );

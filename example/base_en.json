@@ -2,54 +2,21 @@
     "description": "Nemesis",
     "reference": [
         {
-            "text": "To win you must",
+            "id": "tab_help",
             "nested": [
                 {
-                    "text": "Survive",
+                    "text": "To win you must",
                     "nested": [
                         {
+                            "text": "Survive",
                             "nested": [
                                 {
-                                    "id": "survive",
-                                    "text": [
-                                        "If you have 3 serious wounds and take any additional wounds (serious or light), you die.",
-                                        "Larvae infestations and Contamination Cards can kill."
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "text": "Complete your objective",
-                    "nested": [
-                        {
-                            "nested": [
-                                {
-                                    "text": "After the first Intruder appears, players choose **one** of their [objective](#objective) cards that they must try and fullfill."
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "text": "Reach Earth",
-                    "nested": [
-                        {
-                            "text": "Aboard Nemesis",
-                            "nested": [
-                                {
-                                    "text": [
-                                        "Coordinates set to Earth.",
-                                        "2 or 3 engines are working.",
-                                        "Enter Hibernation before Hyperspace Jump."
-                                    ],
                                     "nested": [
                                         {
+                                            "id": "survive",
                                             "text": [
-                                                "Ship Jumps when game timer reaches '0' space.",
-                                                "You must roll ![noise](#icon_noise) die before entering a hibernation pod.",
-                                                "You cannot enter hibernation if an Intruder is in the Hibernatorium."
+                                                "If you have 3 serious wounds and take any additional wounds (serious or light), you die.",
+                                                "Larvae infestations and Contamination Cards can kill."
                                             ]
                                         }
                                     ]
@@ -57,51 +24,89 @@
                             ]
                         },
                         {
-                            "text": "On Escape Pod",
-                            "nested": [
-                                {
-                                    "text": [
-                                        "Unlock, Enter and Launch Escape Pod.",
-                                        "Unlocks automatically when a player dies.",
-                                        "Unlocks / Locks with rare items."
-                                    ],
-                                    "nested": [
-                                        {
-                                            "text": "Each Escape Pod can hold 2 players."
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
-        },
-        {
-            "id": "objective",
-            "text": "Objective card goals",
-            "nested": [
-                {
-                    "text": "![objective](#image_objectives)"
-                },
-                {
-                    "nested": [
-                        {
+                            "text": "Complete your objective",
                             "nested": [
                                 {
                                     "nested": [
                                         {
-                                            "text": "Multiple players can win."
+                                            "text": "After the first Intruder appears, players choose **one** of their [objective](#objective) cards that they must try and fullfill."
                                         }
                                     ]
                                 }
                             ]
                         },
                         {
-                            "text": "Player X cannot [survive](#survive)",
+                            "text": "Reach Earth",
                             "nested": [
                                 {
-                                    "text": "See \"Killing / Impeding Others\" below"
+                                    "text": "Aboard Nemesis",
+                                    "nested": [
+                                        {
+                                            "text": [
+                                                "Coordinates set to Earth.",
+                                                "2 or 3 engines are working.",
+                                                "Enter Hibernation before Hyperspace Jump."
+                                            ],
+                                            "nested": [
+                                                {
+                                                    "text": [
+                                                        "Ship Jumps when game timer reaches '0' space.",
+                                                        "You must roll ![noise](#icon_noise) die before entering a hibernation pod.",
+                                                        "You cannot enter hibernation if an Intruder is in the Hibernatorium."
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "text": "On Escape Pod",
+                                    "nested": [
+                                        {
+                                            "text": [
+                                                "Unlock, Enter and Launch Escape Pod.",
+                                                "Unlocks automatically when a player dies.",
+                                                "Unlocks / Locks with rare items."
+                                            ],
+                                            "nested": [
+                                                {
+                                                    "text": "Each Escape Pod can hold 2 players."
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "id": "objective",
+                    "text": "Objective card goals",
+                    "nested": [
+                        {
+                            "text": "![objective](#image_objectives)"
+                        },
+                        {
+                            "nested": [
+                                {
+                                    "nested": [
+                                        {
+                                            "nested": [
+                                                {
+                                                    "text": "Multiple players can win."
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "text": "Player X cannot [survive](#survive)",
+                                    "nested": [
+                                        {
+                                            "text": "See \"Killing / Impeding Others\" below"
+                                        }
+                                    ]
                                 }
                             ]
                         }

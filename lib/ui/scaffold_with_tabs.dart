@@ -4,23 +4,39 @@ import 'package:provider/provider.dart';
 
 import 'package:nemesis_helper/model/json_data.dart';
 import 'package:nemesis_helper/model/settings.dart';
-import 'package:nemesis_helper/ui/screen_reference.dart';
-import 'package:nemesis_helper/ui/screen_settings.dart';
+import 'package:nemesis_helper/ui/icons_images.dart';
+import 'package:nemesis_helper/ui/settings_menu.dart';
 
 class ScaffoldWithTabs extends StatelessWidget {
   const ScaffoldWithTabs({
     super.key,
     required this.ui,
+    required this.tabs,
     required this.error,
   });
 
   final UISettings ui;
+  final List<JsonTab>? tabs;
   final String? error;
 
   @override
   Widget build(BuildContext context) {
+    // Make Dart null safety happy
+    final tabs = this.tabs;
+
+    if (tabs == null) {
+      return Scaffold(
+        body: Builder(builder: (context) {
+          final error = this.error;
+          if (error != null) return Text(error);
+
+          return const SizedBox.shrink();
+        }),
+      );
+    }
+
     return DefaultTabController(
-      length: 2,
+      length: tabs.length,
       initialIndex: ui.tabIndex,
       child: Scaffold(
         bottomNavigationBar: Builder(builder: (context) {
@@ -29,6 +45,7 @@ class ScaffoldWithTabs extends StatelessWidget {
             color: Theme.of(context).appBarTheme.backgroundColor,
             child: Row(
               children: [
+                // Tabs from JSON
                 Expanded(
                   child: TabBar(
                     labelPadding: const EdgeInsets.all(3.0),
@@ -38,23 +55,23 @@ class ScaffoldWithTabs extends StatelessWidget {
                     indicatorSize: TabBarIndicatorSize.tab,
                     indicatorWeight: 3.0,
                     tabs: [
-                      Tab(
-                        icon: Transform.scale(
-                            scale: 1.5,
-                            child: const Icon(Icons.help_center_outlined)),
-                        text: AppLocalizations.of(context).reference,
-                      ),
-                      Tab(
-                        icon: Transform.scale(
-                            scale: 1.5,
-                            child: const Icon(Icons.text_snippet_outlined)),
-                        text: AppLocalizations.of(context).playSession,
-                      ),
+                      for (final tab in tabs)
+                        Tab(
+                          icon: Transform.scale(
+                              scale: 1.5,
+                              child: (tab.icon != null)
+                                  ? UiIcon(jsonIcon: tab.icon!)
+                                  : (tab.iconMaterial != null)
+                                      ? Icon(tab.iconMaterial)
+                                      : const SizedBox.shrink()),
+                          text: tab.name,
+                        )
                     ],
                   ),
                 ),
                 const VerticalDivider(
                     thickness: 1.5, endIndent: 0.0, width: 1.5),
+                // Settings button
                 IconButton(
                   color: Theme.of(context).appBarTheme.foregroundColor,
                   tooltip: AppLocalizations.of(context).settings,
@@ -83,13 +100,11 @@ class ScaffoldWithTabs extends StatelessWidget {
           final error = this.error;
           if (error != null) return Text(error);
 
-          return TabBarView(children: [
-            Consumer<JsonData?>(
-              builder: (context, jsonData, _) =>
-                  Reference(ui: ui, reference: jsonData?.reference),
-            ),
-            const SizedBox.shrink(),
-          ]);
+          return TabBarView(
+            children: tabs
+                .map((tab) => tab.widget.uiWidgetBuild(context, ui, null))
+                .toList(),
+          );
         }),
       ),
     );

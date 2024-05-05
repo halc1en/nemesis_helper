@@ -12,6 +12,15 @@ class UISettings extends ChangeNotifier {
   /// Flag to indicate that changed setting requires reloading/reparsing JSON
   bool reloadJson = false;
 
+  /// Flag to indicate that a search was requested in current [tabIndex]
+  (String, String)? _search;
+  (String, String)? get search => _search;
+  set search((String, String)? value) {
+    if (_search == value) return;
+    _search = value;
+    if (value != null) notifyListeners();
+  }
+
   // Settings that are available to user, so any
   // change to them should call notifyListeners()
   double _scale;

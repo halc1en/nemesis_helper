@@ -13,5 +13,25 @@
             "id": "icon_noise",
             "path": "noise.webp"
         }
+    ],
+    "tabs": [
+        {
+            "icon_material": "text-box-outline",
+            "widget": {
+                "type": "json_id",
+                "id": "tab_help",
+                "search_bar": true,
+                "root": "tab_help"
+            }
+        },
+        {
+            "icon_material": "help-box-outline",
+            "widget": {
+                "type": "json_id",
+                "id": "tab_objectives",
+                "search_bar": true,
+                "root": "objective"
+            }
+        }
     ]
 }

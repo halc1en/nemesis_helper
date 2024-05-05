@@ -1,11 +1,8 @@
 {
     "appTitle": "Nemesis helper",
 
-    "reference": "Reference",
     "tableOfContents": "Table of contents",
     "searchHint": "Search",
-
-    "playSession": "Play session",
 
     "settings": "Settings",
     "modules": "Modules: ",

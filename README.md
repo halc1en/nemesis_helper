@@ -13,6 +13,8 @@ The main file is always called `data.json` and contains these optional fields:
 - `"languages"` - [list of supported languages](#localization) according to "preferred value" entries in the [IANA Language Subtag Registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry).  If localization for some text is not provided in given language then `"en"` fallback will be used.
 - `"images"`/`"icons"` - [lists of images and icons used](#images-and-icons).
 - `"modules"` - [list of modules](#modules).  That is, of children JSONs that should also be parsed and merged with the root JSON (if the corresponding module is enabled).
+- `"tabs"` - [list of tabs](#tabs) that will be shown at the bottom.
+- `"tabs_names"` - list of tabs names, this should go into [localized](#localization) version of `data.json`
 
 ### Localization
 
@@ -39,9 +41,56 @@ Allowed fields:
 - `"default"`-  whether module is enabled on app's first start.
 - `"description"` - allow module to be selectable by user on settings screen.
 - `"reference"` - list of reference chapters of JSON map type, each of them can have these fields:
-    - "id" - optional chapter's id, useful for creating links to it.
-    - "text" - optional chapter's text, see [formatting](#formatting) below.
-    - "nested" - list of nested sub-chapters that can have all the same fields as this one.
+    - `"id"` - optional chapter's id, useful for creating links to it.
+    - `"text"` - optional chapter's text, see [formatting](#formatting-of-text) below.
+    - `"nested"` - list of nested sub-chapters that can have all the same fields as this one.
+
+    Note that the top level of `"reference"` is reserved for specifying tabs and cannot have `"text"` field.
+
+### Tabs
+
+```json
+    "tabs": [
+        {
+            "icon": "icon.webp",
+            "icon_material": "text-box-outline",
+            "widget": {
+                ...
+            }
+        }
+    ]
+```
+
+- `"icon"` or `"icon_material"` will be drawn on tab, first refers to an [icon specified earlier](#images-and-icons) and second refers to a name from [Material spec](https://pictogrammers.com/library/mdi/).
+- `"widget"` refers to one of supported [widgets](#widgets)
+
+### Widgets
+
+Special GUI elements that can be embedded, currently allowed only in tabs.
+
+```json
+"widget": {
+    "type": ...
+}
+```
+
+- `"type"` - see below for supported types
+- Other fields are dependent on widget's type
+
+#### json_id
+
+```json
+"widget": {
+    "type": "json_id",
+    "id": "unique_id",
+    "search_bar": true,
+    "root": "tab_help"
+}
+```
+
+- `"id"` - same as for `"reference"`, a globally unique id.
+- `"search_bar"` - whether to show a search bar on top.
+- `"root"` - point at `"reference"` to show in this widget.
 
 ### Patches
 
@@ -68,12 +117,14 @@ Any JSON can be patched with special files containing small fixes.  To do this, 
 
 ### Formatting of "text"
 
-To avoid boilerplate the text style is based on it's nesting level.  There are 5 levels in total:
+To avoid boilerplate the text style is based on it's nesting level.  After the top level that is reserved for tabs, there are another 5 levels with different styles:
 1. Top-level header.  Collapsible, shown in uppercase for normal text and shown as-is for table of contents.
 2. Second-level header.  Collapsible.
 3. Third-level header.  Much smaller then the first two.
 4. Text.  This is the most used level.
 5. Comments.  Use for small sized commentary to the text.
+
+"text" can also contain an array of strings instead of a single string, each one is rendered as a separate paragraph.
 
 #### Bold and italics
 

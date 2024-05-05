@@ -70,6 +70,9 @@ dependencies:
 
   package_info_plus: ^5.0.1
 
+  # For specifying icons by name in JSON
+  material_design_icons_flutter: ^7.0.7296
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
