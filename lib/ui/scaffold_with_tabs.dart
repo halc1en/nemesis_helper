@@ -24,19 +24,8 @@ class ScaffoldWithTabs extends StatelessWidget {
     // Make Dart null safety happy
     final tabs = this.tabs;
 
-    if (tabs == null) {
-      return Scaffold(
-        body: Builder(builder: (context) {
-          final error = this.error;
-          if (error != null) return Text(error);
-
-          return const SizedBox.shrink();
-        }),
-      );
-    }
-
     return DefaultTabController(
-      length: tabs.length,
+      length: tabs?.length ?? 0,
       initialIndex: ui.tabIndex,
       child: Scaffold(
         bottomNavigationBar: Builder(builder: (context) {
@@ -55,7 +44,7 @@ class ScaffoldWithTabs extends StatelessWidget {
                     indicatorSize: TabBarIndicatorSize.tab,
                     indicatorWeight: 3.0,
                     tabs: [
-                      for (final tab in tabs)
+                      for (final tab in tabs ?? <JsonTab>[])
                         Tab(
                           icon: Transform.scale(
                               scale: 1.5,
@@ -101,7 +90,7 @@ class ScaffoldWithTabs extends StatelessWidget {
           if (error != null) return Text(error);
 
           return TabBarView(
-            children: tabs
+            children: (tabs ?? <JsonTab>[])
                 .map((tab) => tab.widget.uiWidgetBuild(context, ui, null))
                 .toList(),
           );

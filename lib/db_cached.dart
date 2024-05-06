@@ -186,7 +186,19 @@ class DbCached {
         .put(filename, DateTime.timestamp().toIso8601String());
 
     print("Loaded \"$filename\" from network database");
-    return json;
+    // jsons can be edited and later re-parsed,
+    // so return a copy of the value from [_networkJsonsCache]
+    return _jsonDeepCopy(json);
+  }
+
+  dynamic _jsonDeepCopy(dynamic json) {
+    if (json is Map<String, dynamic>) {
+      return json.map((key, value) => MapEntry(key, _jsonDeepCopy(value)));
+    } else if (json is List<dynamic>) {
+      return json.map((value) => _jsonDeepCopy(value)).toList();
+    } else {
+      return json;
+    }
   }
 
   /// Load image from network database (or from a local cache);
