@@ -193,7 +193,7 @@ class _JsonIdState extends State<_JsonId>
                       .jumpTo(index: index, alignment: 0.0);
                 },
                 itemBuilder: (BuildContext context) {
-                  var shownChapters =
+                  final shownChapters =
                       this._itemPositionsListener.itemPositions.value;
                   final (firstShown, lastShown) = (
                     shownChapters.firstOrNull?.index,
@@ -321,6 +321,15 @@ class _JsonIdState extends State<_JsonId>
     Future(() async => await widget.sharedPreferences?.setString(
         "json_id__${widget.id}__collapsed_chapters",
         _z85.encode(Uint8List.fromList(this._collapsed))));
+  }
+
+  void collapseWithChildren(ReferenceChapter chapter) {
+    final expansionId = chapter.expansionId(widget.id);
+    if (expansionId != null) setExpanded(chapter, false);
+
+    if (chapter.depth.next().isCollapsible()) {
+      chapter.nested.forEach(collapseWithChildren);
+    }
   }
 
   /// Get expansion state for chapter specified by [ReferenceChapter.expansionId]
@@ -594,7 +603,16 @@ class _JsonIdState extends State<_JsonId>
             maintainState: true,
             onExpansionChanged: (expansionId == null)
                 ? null
-                : (value) => updateExpanded(expansionId, value),
+                : (value) {
+                    // Save new expansion value
+                    updateExpanded(expansionId, value);
+
+                    // Also collapse all children
+                    if (value == false &&
+                        chapter.depth.next().isCollapsible()) {
+                      chapter.nested.forEach(collapseWithChildren);
+                    }
+                  },
             initiallyExpanded: isExpanded(expansionId),
             title: renderedText,
             children: nestedWidgets,
@@ -797,11 +815,17 @@ class _JsonIdState extends State<_JsonId>
   void _itemPositionListener() {
     final firstItem =
         this._itemPositionsListener.itemPositions.value.firstOrNull;
+    final index = firstItem?.index ?? 0;
+    final alignment = firstItem?.itemLeadingEdge ?? 0.0;
+
+    if (kDebugMode) {
+      print("scrollIndex $index scrollAlignment $alignment");
+    }
+
     widget.sharedPreferences
-        ?.setInt("json_id__${widget.id}__scroll_index", firstItem?.index ?? 0);
-    widget.sharedPreferences?.setDouble(
-        "json_id__${widget.id}__scroll_alignment",
-        firstItem?.itemLeadingEdge ?? 0.0);
+        ?.setInt("json_id__${widget.id}__scroll_index", index);
+    widget.sharedPreferences
+        ?.setDouble("json_id__${widget.id}__scroll_alignment", alignment);
   }
 
   void onSearchChange(String value) {
