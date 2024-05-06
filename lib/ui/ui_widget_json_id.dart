@@ -190,46 +190,48 @@ class _JsonIdState extends State<_JsonId>
           Row(
             children: [
               // Table of contents
-              PopupMenuButton<int>(
-                tooltip: AppLocalizations.of(context).tableOfContents,
-                icon: const Icon(Icons.menu_book),
-                iconColor: theme.colorScheme.secondary,
-                onSelected: (int index) {
-                  this
-                      ._itemScrollController
-                      .jumpTo(index: index, alignment: 0.0);
-                },
-                itemBuilder: (BuildContext context) {
-                  final shownChapters =
-                      this._itemPositionsListener.itemPositions.value;
-                  final (firstShown, lastShown) = (
-                    shownChapters.firstOrNull?.index,
-                    shownChapters.lastOrNull?.index
-                  );
-                  final textStyle = Theme.of(context).textTheme.titleMedium!;
-
-                  return widget.chapters.indexed.map((val) {
-                    final (index, topChapter) = val;
-                    final bool isOnScreen = (firstShown != null &&
-                        lastShown != null &&
-                        index >= firstShown &&
-                        index <= lastShown);
-
-                    return PopupMenuItem<int>(
-                      padding: const EdgeInsets.symmetric(vertical: 0.0),
-                      value: index,
-                      child: _renderText(context, topChapter, null, null, null,
-                              tocPrefix: "${index + 1}. ",
-                              styleOverride: !isOnScreen
-                                  ? textStyle
-                                  : textStyle.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: theme.colorScheme.primary))
-                          .$1,
+              if (widget.chapters.length > 1)
+                PopupMenuButton<int>(
+                  tooltip: AppLocalizations.of(context).tableOfContents,
+                  icon: const Icon(Icons.menu_book),
+                  iconColor: theme.colorScheme.secondary,
+                  onSelected: (int index) {
+                    this
+                        ._itemScrollController
+                        .jumpTo(index: index, alignment: 0.0);
+                  },
+                  itemBuilder: (BuildContext context) {
+                    final shownChapters =
+                        this._itemPositionsListener.itemPositions.value;
+                    final (firstShown, lastShown) = (
+                      shownChapters.firstOrNull?.index,
+                      shownChapters.lastOrNull?.index
                     );
-                  }).toList();
-                },
-              ),
+                    final textStyle = Theme.of(context).textTheme.titleMedium!;
+
+                    return widget.chapters.indexed.map((val) {
+                      final (index, topChapter) = val;
+                      final bool isOnScreen = (firstShown != null &&
+                          lastShown != null &&
+                          index >= firstShown &&
+                          index <= lastShown);
+
+                      return PopupMenuItem<int>(
+                        padding: const EdgeInsets.symmetric(vertical: 0.0),
+                        value: index,
+                        child: _renderText(
+                                context, topChapter, null, null, null,
+                                tocPrefix: "${index + 1}. ",
+                                styleOverride: !isOnScreen
+                                    ? textStyle
+                                    : textStyle.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: theme.colorScheme.primary))
+                            .$1,
+                      );
+                    }).toList();
+                  },
+                ),
 
               // Search field
               Expanded(
