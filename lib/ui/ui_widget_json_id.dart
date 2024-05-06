@@ -24,6 +24,7 @@ class TextFmtRange {
     this.highlight = false,
     this.link,
     this.image,
+    this.chained = false,
   }) : assert(start >= 0);
 
   final int start;
@@ -33,6 +34,10 @@ class TextFmtRange {
   final String? link;
   final ParsedImage? image;
 
+  /// This is used to detect if two ranges actually belong to one that got
+  /// split to update [highlight]
+  final bool chained;
+
   TextFmtRange copyWith({
     int? start,
     bool? bold,
@@ -40,6 +45,7 @@ class TextFmtRange {
     bool? highlight,
     String? link,
     ParsedImage? image,
+    bool? chained,
   }) {
     return TextFmtRange(
       start ?? this.start,
@@ -48,6 +54,7 @@ class TextFmtRange {
       highlight: highlight ?? this.highlight,
       link: link ?? this.link,
       image: image ?? this.image,
+      chained: chained ?? this.chained,
     );
   }
 
@@ -359,8 +366,8 @@ class _JsonIdState extends State<_JsonId>
           [prevFmt.copyWith(start: cursor, highlight: highlight)]);
       format.skip(prevIndex + 1).forEach((f) => f.highlight = highlight);
     } else {
-      format.insert(
-          prevIndex + 1, prevFmt.copyWith(start: cursor, highlight: highlight));
+      format.insert(prevIndex + 1,
+          prevFmt.copyWith(start: cursor, highlight: highlight, chained: true));
       format.skip(prevIndex + 2).forEach((f) => f.highlight = highlight);
     }
   }
@@ -503,6 +510,12 @@ class _JsonIdState extends State<_JsonId>
 
     TextFmtRange fmt = format.first;
     for (final nextFmt in format.skip(1)) {
+      // Show each image only once
+      if (fmt.chained && fmt.image != null) {
+        fmt = nextFmt;
+        continue;
+      }
+
       final span = _renderSingleSpan(
           context,
           chapter,
