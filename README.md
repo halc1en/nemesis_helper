@@ -83,13 +83,15 @@ Special GUI elements that can be embedded, currently allowed only in tabs.
 "widget": {
     "type": "json_id",
     "id": "unique_id",
+    "collapsible": "true",
     "search_bar": true,
     "root": "tab_help"
 }
 ```
 
 - `"id"` - same as for `"reference"`, a globally unique id.
-- `"search_bar"` - whether to show a search bar on top.
+- `"collapsible"` - default to true; whether to allow collapsing of chapters.
+- `"search_bar"` - default to false; whether to show a search bar on top.
 - `"root"` - point at `"reference"` to show in this widget.  Support optional suffix "/*" (without double quotes) that means all `"nested"` chapters should be loaded instead of the target chapter itself.
 
 ### Patches

@@ -71,8 +71,9 @@ class _JsonId extends StatefulWidget {
     required this.assets,
     required this.ui,
     required this.id,
-    required this.jumpToChapter,
+    required this.collapsible,
     required this.searchBar,
+    required this.jumpToChapter,
   });
 
   final SharedPreferences? sharedPreferences;
@@ -85,6 +86,9 @@ class _JsonId extends StatefulWidget {
   final String id;
 
   final UISettings ui;
+
+  /// Allow collapsing of chapters?
+  final bool collapsible;
 
   /// Do show search bar at top?
   final bool searchBar;
@@ -597,7 +601,7 @@ class _JsonIdState extends State<_JsonId>
     switch ((
       renderedText,
       nestedWidgets.isEmpty ? null : nestedWidgets,
-      chapter.depth.isCollapsible()
+      widget.collapsible && chapter.depth.isCollapsible()
     )) {
       case (Widget renderedText, List<Widget> nestedWidgets, true):
         // Force expanding and collapsing when user changes search field
@@ -875,17 +879,22 @@ class _JsonIdState extends State<_JsonId>
 class UIWidgetJsonId implements UIWidget {
   final String _id;
 
+  /// Whether this chapter and its children can be collapsed
+  final bool _collapsible;
+
   /// Show search bar?
   final bool _searchBar;
 
   /// Root chapters to render
   final List<ReferenceChapter> _chapters;
 
-  const UIWidgetJsonId._(
-      {required String id,
-      required bool searchBar,
-      required List<ReferenceChapter> chapters})
-      : _id = id,
+  const UIWidgetJsonId._({
+    required String id,
+    required bool collapsible,
+    required bool searchBar,
+    required List<ReferenceChapter> chapters,
+  })  : _id = id,
+        _collapsible = collapsible,
         _searchBar = searchBar,
         _chapters = chapters;
 
@@ -907,6 +916,7 @@ class UIWidgetJsonId implements UIWidget {
 
     final uiWidget = UIWidgetJsonId._(
       id: json['id'] as String,
+      collapsible: (json['collapsible'] as bool?) ?? true,
       searchBar: (json['search_bar'] as bool?) ?? false,
       chapters: chapters,
     );
@@ -930,6 +940,8 @@ class UIWidgetJsonId implements UIWidget {
           assets: jsonData.reference.assets,
           ui: ui,
           id: this._id,
+          collapsible: this._collapsible,
+          searchBar: this._searchBar,
           jumpToChapter: (String searchId) {
             final parents = <ReferenceChapter>[];
             final chapter =
@@ -948,7 +960,6 @@ class UIWidgetJsonId implements UIWidget {
             ui.search = (searchId, (tab.widget as UIWidgetJsonId)._id);
             DefaultTabController.of(context).animateTo(ui.tabIndex);
           },
-          searchBar: this._searchBar,
         );
       },
     );
