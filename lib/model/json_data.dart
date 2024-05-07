@@ -515,7 +515,7 @@ class ReferenceChapter {
     parents?.add(this);
     final chapter = this
         .nested
-        .map((chapter) => chapter._findById(id))
+        .map((chapter) => chapter._findById(id, parents: parents))
         .nonNulls
         .firstOrNull;
     if (chapter == null) parents?.removeLast();
@@ -675,9 +675,9 @@ class ReferenceData {
   const ReferenceData({required this.nested, required this.assets});
 
   /// Create keys and controllers for specified widget
-  void prepareWidget(String uiWidget, String? rootId) {
+  void prepareWidget(String uiWidget, List<ReferenceChapter> chapters) {
     final idGen = IdGen();
-    for (final chapter in findChaptersById(rootId)) {
+    for (final chapter in chapters) {
       chapter._prepareWidget(uiWidget, idGen);
     }
   }
@@ -698,13 +698,10 @@ class ReferenceData {
         nested: nested, assets: ReferenceAssets(images: images, icons: icons));
   }
 
-  /// Find chapter with specified [id] and return top-level chapters if
-  /// [id] is null.  If [parents] is not null then all parents
-  /// of the target chapter will be returned there.
-  List<ReferenceChapter> findChaptersById(String? id,
+  /// Find chapter with specified [id].  If [parents] is not null then all
+  /// parents of the target chapter will be returned there.
+  ReferenceChapter findChapterById(String id,
       {List<ReferenceChapter>? parents}) {
-    if (id == null) return this.nested;
-
     final chapter = this
         .nested
         .map((chapter) => chapter._findById(id, parents: parents))
@@ -712,15 +709,10 @@ class ReferenceData {
         .firstOrNull;
 
     if (chapter == null) {
-      return [ReferenceChapter.notFoundChapter(id)];
+      return ReferenceChapter.notFoundChapter(id);
     }
 
-    // Important optimization: returned chapters are arranged in a lazily
-    // built list so it is important to return actual chapters that user
-    // will see instead of a single tab.
-    if (chapter.depth.isTab()) return chapter.nested;
-
-    return [chapter];
+    return chapter;
   }
 }
 

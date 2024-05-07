@@ -190,7 +190,10 @@ class _JsonIdState extends State<_JsonId>
           Row(
             children: [
               // Table of contents
-              if (widget.chapters.length > 1)
+              if (widget.chapters
+                      .where((chapter) => chapter.text != null)
+                      .length >
+                  1)
                 PopupMenuButton<int>(
                   tooltip: AppLocalizations.of(context).tableOfContents,
                   icon: const Icon(Icons.menu_book),
@@ -875,15 +878,42 @@ class UIWidgetJsonId implements UIWidget {
   /// Show search bar?
   final bool _searchBar;
 
-  /// Root chapter to render
-  final String _root;
+  /// Root chapters to render
+  final List<ReferenceChapter> _chapters;
+
+  const UIWidgetJsonId._(
+      {required String id,
+      required bool searchBar,
+      required List<ReferenceChapter> chapters})
+      : _id = id,
+        _searchBar = searchBar,
+        _chapters = chapters;
 
   /// Create a new [UIWidget] instance
-  UIWidgetJsonId.fromJson(Map<String, dynamic> json, ReferenceData reference)
-      : _id = json['id'] as String,
-        _searchBar = (json['search_bar'] as bool?) ?? false,
-        _root = json['root'] as String {
-    reference.prepareWidget(this._id, this._root);
+  factory UIWidgetJsonId.fromJson(
+      Map<String, dynamic> json, ReferenceData reference) {
+    final root = json['root'] as String;
+    final List<ReferenceChapter> chapters;
+
+    if (root.endsWith('/*')) {
+      chapters =
+          reference.findChapterById(root.substring(0, root.length - 2)).nested;
+    } else {
+      final chapter = reference.findChapterById(root);
+      // Chapters are arranged in a lazily built list so it is important to
+      // return actual chapters that user will see instead of a single tab.
+      chapters = (chapter.depth.isTab()) ? chapter.nested : [chapter];
+    }
+
+    final uiWidget = UIWidgetJsonId._(
+      id: json['id'] as String,
+      searchBar: (json['search_bar'] as bool?) ?? false,
+      chapters: chapters,
+    );
+
+    reference.prepareWidget(uiWidget._id, uiWidget._chapters);
+
+    return uiWidget;
   }
 
   @override
@@ -896,24 +926,26 @@ class UIWidgetJsonId implements UIWidget {
 
         return _JsonId(
           sharedPreferences: ui.sharedPreferences,
-          chapters: jsonData.reference.findChaptersById(this._root),
+          chapters: this._chapters,
           assets: jsonData.reference.assets,
           ui: ui,
           id: this._id,
-          jumpToChapter: (String chapterId) {
+          jumpToChapter: (String searchId) {
             final parents = <ReferenceChapter>[];
-            final chapters = jsonData.reference
-                .findChaptersById(chapterId, parents: parents);
+            final chapter =
+                jsonData.reference.findChapterById(searchId, parents: parents);
 
             final tab = jsonData.tabs
                 .where((tab) => (tab.widget is UIWidgetJsonId))
-                .where((tab) => parents.followedBy(chapters).any((parent) =>
-                    (tab.widget as UIWidgetJsonId)._root == parent.id))
+                .where((tab) => parents.followedBy([chapter]).any((chapter) =>
+                    (tab.widget as UIWidgetJsonId)
+                        ._chapters
+                        .any((tabChapter) => tabChapter == chapter)))
                 .firstOrNull;
             if (tab == null) return;
 
             ui.tabIndex = jsonData.tabs.indexOf(tab);
-            ui.search = (chapterId, (tab.widget as UIWidgetJsonId)._id);
+            ui.search = (searchId, (tab.widget as UIWidgetJsonId)._id);
             DefaultTabController.of(context).animateTo(ui.tabIndex);
           },
           searchBar: this._searchBar,

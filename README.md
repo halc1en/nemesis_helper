@@ -90,7 +90,7 @@ Special GUI elements that can be embedded, currently allowed only in tabs.
 
 - `"id"` - same as for `"reference"`, a globally unique id.
 - `"search_bar"` - whether to show a search bar on top.
-- `"root"` - point at `"reference"` to show in this widget.
+- `"root"` - point at `"reference"` to show in this widget.  Support optional suffix "/*" (without double quotes) that means all `"nested"` chapters should be loaded instead of the target chapter itself.
 
 ### Patches
 
