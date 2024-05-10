@@ -472,7 +472,7 @@ class _JsonIdState extends State<_JsonId>
     if (regex == null && chapter.formatNoHighlight.isEmpty) {
       final widget = Container(
         alignment: Alignment.centerLeft,
-        padding: chapter.depth.indentation(),
+        padding: chapter.depth.indentationParagraph(),
         child: Text(
           // Also add specified table of contents prefix
           "${tocPrefix ?? ''}$text",
@@ -565,7 +565,7 @@ class _JsonIdState extends State<_JsonId>
     widget = Container(
       key: key,
       alignment: Alignment.centerLeft,
-      padding: chapter.depth.indentation(),
+      padding: chapter.depth.indentationParagraph(),
       child: widget,
     );
     return (widget, matches);
@@ -683,7 +683,7 @@ class _JsonIdState extends State<_JsonId>
                 context,
                 chapter,
                 listIndex,
-                // Seems that ensureVisible() does not work will with
+                // Seems that ensureVisible() does not work well with
                 // [ExpansionTile] so use jumps instead of scrolling
                 false,
                 searchId,

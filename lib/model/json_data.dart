@@ -440,6 +440,12 @@ class ReferenceChapter {
     String? link,
     ParsedImage? image,
   }) {
+    // Apply first line indentation
+    if (link == null && image == null) {
+      final indent = this.depth.indentationFirstLine();
+      text = '$indent${text.replaceAll("\n", "\n$indent")}';
+    }
+
     void saveFormatting() {
       this.formatNoHighlight.add(TextFmtRange(cursor,
           bold: bold, italic: italic, link: link, image: image));
@@ -578,10 +584,14 @@ class Nesting {
 
   Nesting next() => Nesting._explicit(this._depth + 1);
 
-  EdgeInsets indentation() {
+  EdgeInsets indentationParagraph() {
     if (this.isComment()) return const EdgeInsets.only(left: 24, right: 4);
     if (!this.isCollapsible()) return const EdgeInsets.only(left: 12, right: 4);
     return const EdgeInsets.symmetric(horizontal: 4);
+  }
+
+  String indentationFirstLine() {
+    return (this.isHeader()) ? '' : '    ';
   }
 
   /// Get text style for each of 0 to 4 allowed nesting depths in JSON
