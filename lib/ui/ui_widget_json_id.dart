@@ -281,7 +281,7 @@ class _JsonIdState extends State<_JsonId>
                   offstage: false,
                   onLinkTap: (String jumpTo) =>
                       _jump(context, jumpTo.substring(1)),
-                ).$1;
+                );
               },
             ),
           ),
@@ -575,7 +575,18 @@ class _JsonIdState extends State<_JsonId>
   ///
   /// Set [offstage] to build yet another instance of the widget; useful
   /// for calculating dimensions when jumping through links.
-  (Widget, bool) _renderChapter(
+  Widget _renderChapter(
+      BuildContext context, ReferenceChapter chapter, bool forceExpandCollapse,
+      {required bool offstage, required LinkTapCallback? onLinkTap}) {
+    final (widgets, _) = _renderChapterRecurse(
+        context, chapter, forceExpandCollapse,
+        offstage: offstage, onLinkTap: onLinkTap);
+
+    return (widgets.length == 1) ? widgets.first : Column(children: widgets);
+  }
+
+  /// Helper for [_renderChapter]
+  (List<Widget>, bool) _renderChapterRecurse(
       BuildContext context, ReferenceChapter chapter, bool forceExpandCollapse,
       {required bool offstage, required LinkTapCallback? onLinkTap}) {
     final List<Widget> nestedWidgets;
@@ -583,11 +594,11 @@ class _JsonIdState extends State<_JsonId>
 
     // Recursively walk children
     (nestedWidgets, nestedMatches) = chapter.nested
-        .map((ReferenceChapter child) => _renderChapter(
+        .map((ReferenceChapter child) => _renderChapterRecurse(
             context, child, forceExpandCollapse,
             offstage: offstage, onLinkTap: onLinkTap))
         .fold<(List<Widget>, bool)>(([], false), (prev, element) {
-      return (prev.$1..add(element.$1), prev.$2 || element.$2);
+      return (prev.$1..addAll(element.$1), prev.$2 || element.$2);
     });
 
     final (renderedText, thisMatches) = (chapter.text != null)
@@ -597,13 +608,19 @@ class _JsonIdState extends State<_JsonId>
     // Make sure that all [ScrollablePositionedList] children have
     // global key.  It's necessary to avoid needless full rebuilds
     // (including state!!) for it's jumpTo() method.
-    final globalKey = chapter.globalKey(offstage, widget.id);
+    final List<Widget> result;
     switch ((
       renderedText,
       nestedWidgets.isEmpty ? null : nestedWidgets,
-      widget.collapsible && chapter.depth.isCollapsible()
+      widget.collapsible && chapter.depth.isCollapsible(),
+      chapter.globalKey(offstage, widget.id),
     )) {
-      case (Widget renderedText, List<Widget> nestedWidgets, true):
+      case (
+          Widget renderedText,
+          List<Widget> nestedWidgets,
+          true,
+          GlobalKey? globalKey
+        ):
         // Force expanding and collapsing when user changes search field
         // and do nothing otherwise
         final forcedExpansion = nestedMatches || thisMatches;
@@ -613,7 +630,7 @@ class _JsonIdState extends State<_JsonId>
 
         final expansionId = chapter.expansionId(widget.id);
 
-        return (
+        result = [
           ExpansionTile(
             key: globalKey,
             controller:
@@ -636,43 +653,45 @@ class _JsonIdState extends State<_JsonId>
                     }
                   },
             initiallyExpanded: isExpanded(expansionId),
+            // This cannot be null so for headers without
+            // text use [Column] instead
             title: renderedText,
             children: nestedWidgets,
-          ),
-          nestedMatches || thisMatches
-        );
-      case (Widget widget, List<Widget> nestedWidgets, false):
-        return (
-          Column(key: globalKey, children: [widget, ...nestedWidgets]),
-          nestedMatches || thisMatches
-        );
-      case (Widget widget, null, _):
-        // Use simple [Text] if possible
-        return (
-          (globalKey == null)
-              ? widget
-              : SizedBox(key: globalKey, child: widget),
-          thisMatches,
-        );
-      case (null, List<Widget> nestedWidgets, _):
-        // [ExpansionTile] by definition requires some text in header
-        // so use simple [Column] instead
-        final Widget chapter;
-        switch ((nestedWidgets.length, globalKey)) {
-          case (1, null):
-            chapter = nestedWidgets.first;
-          case (1, GlobalKey _):
-            chapter = SizedBox(key: globalKey, child: nestedWidgets.first);
-          case _:
-            chapter = Column(key: globalKey, children: [...nestedWidgets]);
-        }
-        return (chapter, nestedMatches);
-      case (null, null, _):
-        return (SizedBox.shrink(key: globalKey), false);
+          )
+        ];
+      case (
+          Widget widget,
+          List<Widget> nestedWidgets,
+          false,
+          GlobalKey globalKey
+        ):
+        result = [
+          Column(key: globalKey, children: [widget, ...nestedWidgets])
+        ];
+      case (null, List<Widget> nestedWidgets, _, GlobalKey globalKey):
+        result = switch ((nestedWidgets.length)) {
+          (1) => [SizedBox(key: globalKey, child: nestedWidgets.first)],
+          (_) => [Column(key: globalKey, children: nestedWidgets)],
+        };
+      case (Widget widget, null, _, GlobalKey globalKey):
+        result = [SizedBox(key: globalKey, child: widget)];
+      case (null, null, _, GlobalKey globalKey):
+        result = [SizedBox.shrink(key: globalKey)];
+      case (Widget? widget, List<Widget>? nestedWidgets, false, null):
+        result = [if (widget != null) widget, ...?nestedWidgets];
+      case (null, List<Widget> nestedWidgets, _, null):
+        result = nestedWidgets;
+      case (null, null, _, null):
+        result = [];
+      case (Widget widget, null, _, null):
+        result = [widget];
+      default:
+        // Make compiler happy
+        result = [];
+        assert(false);
     }
 
-    // Silence the compiler
-    throw Exception("Unhandled case in chapter rendering");
+    return (result, nestedMatches || thisMatches);
   }
 
   void _jump(BuildContext context, String searchId) {
@@ -772,8 +791,7 @@ class _JsonIdState extends State<_JsonId>
     // Hard path: calculate proper position for jump and schedule it
     final offstage = Offstage(
       child: _renderChapter(context, chaptersList.first, true,
-              offstage: true, onLinkTap: null)
-          .$1,
+          offstage: true, onLinkTap: null),
     );
     setState(() {
       this._offstage = offstage;
