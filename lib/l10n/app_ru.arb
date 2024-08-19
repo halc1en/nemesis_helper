@@ -1,14 +1,50 @@
 {
+    "account": "Аккаунт",
+    "accountName": "Имя: ",
     "appTitle": "Помощник по Немезиде",
-
-    "tableOfContents": "Содержание",
-    "searchHint": "Поиск",
-
-    "settings": "Настройки",
-    "modules": "Модули: ",
+    "cancel": "Отмена",
+    "debugging": "Отладка",
+    "deleteAccount": "Удалить свой аккаунт",
+    "deleteAccountConfirmation": "Это удалит аккаунт и все данные без возможности восстановления! Если уверены, то введите \"{code}\".",
+    "@deleteAccountConfirmation": {
+        "placeholders": {
+            "code": {}
+        }
+    },
+    "email": "Почта",
+    "findAddFriends": "Найти и добавить друзей",
+    "findFriends": "Поиск друзей",
+    "friends": "Друзья: ",
+    "interface": "Интерфейс",
+    "invalidEmail": "Введите корректную почту",
     "language": "Язык: ",
     "languageSystem": "системный",
+    "login": "Войти",
+    "loginFail": "Ошибка при входе",
+    "loginWithEmail": "Войти по эл. почте",
+    "loginWithGoogle": "Войти через Google",
+    "modules": "Модули",
+    "nameTaken": "Имя \"{name}\" занято",
+    "@nameTaken": {
+        "placeholders": {
+            "name": {}
+        }
+    },
+    "nFriends": "{count,plural, =1{{count} друг} few{{count} друга} other{{count} друзей}}",
+    "@nFriends": {
+        "placeholders": {
+            "count": {}
+        }
+    },
+    "offlineMode": "Автономный режим",
+    "otpEmailFail": "Не удалось отослать письмо с кодом",
+    "otpVerifyFail": "Ошибка при проверке кода",
+    "save": "Сохранить",
     "scaleDescription": "Установить размер текста и элементов в приложении",
-    "scale": "Масштаб текста: ",
-    "offlineMode": "Автономный режим: "
+    "scale": "Масштаб: ",
+    "searchHint": "Поиск",
+    "settings": "Настройки",
+    "sixDigitCode": "6-значный код",
+    "signOut": "Выйти",
+    "tableOfContents": "Содержание"
 }

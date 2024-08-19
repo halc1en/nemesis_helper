@@ -33,6 +33,18 @@
                 "search_bar": true,
                 "root": "objective"
             }
+        },
+        {
+            "icon_material": "map-legend",
+            "widget": {
+                "type": "authenticate",
+                "description": "Login to create a new game session",
+                "widget": {
+                    "type": "json_id",
+                    "id": "tab_logged_in",
+                    "root": "survive"
+                }
+            }
         }
     ]
 }

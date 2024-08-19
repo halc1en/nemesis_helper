@@ -33,11 +33,6 @@ class DbCached {
 
     // Schedule network accesses
     if (!ui.offline) {
-      await Supabase.initialize(
-        url: 'https://crkiyacenvzsbetbmmyg.supabase.co',
-        anonKey:
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNya2l5YWNlbnZ6c2JldGJtbXlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDE3NzUyODMsImV4cCI6MjAxNzM1MTI4M30.dlpo_aVZ57dF_lOKd3WqW53iNycHTvG7jnz7SfszmK0',
-      );
       jsons = Supabase.instance.client
           .from('jsons')
           .select('name, json')

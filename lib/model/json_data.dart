@@ -346,6 +346,7 @@ class ReferenceChapter {
     required String? text,
     required this.id,
     required this.depth,
+    required this.uiWidgetJson,
     required this.nested,
   }) {
     this.text = (text != null) ? _parseJsonString(text) : null;
@@ -355,13 +356,21 @@ class ReferenceChapter {
         text: 'Chapter "$id" not found in JSON',
         id: null,
         depth: const Nesting(),
+        uiWidgetJson: null,
         nested: [],
       );
 
-  // This chapter's text
+  /// This chapter's text
   late String? text;
 
-  // Nested chapters
+  /// Optional widget to show below [text]
+  ///
+  /// Initializing widgets can be done only after [ReferenceChapter]
+  /// has been created so we'll do it later.
+  late Map<String, dynamic>? uiWidgetJson;
+  UIWidget? uiWidget;
+
+  /// Nested chapters, shown after [text] and [uiWidget]
   final List<ReferenceChapter> nested;
 
   /// This chapter's id (for hyperlinks to it)
@@ -542,6 +551,7 @@ class ReferenceChapter {
       text: (jsonText is List) ? jsonText.join('\n') : (jsonText as String?),
       id: json['id'] as String?,
       depth: depth,
+      uiWidgetJson: json['widget'] as Map<String, dynamic>?,
       nested: nested,
     );
   }
@@ -634,7 +644,7 @@ class Nesting {
     return Color.lerp(
         nestingStyle.color ??
             nestingStyle.foreground?.color ??
-            Theme.of(context).colorScheme.background,
+            Theme.of(context).colorScheme.surface,
         Colors.black,
         0.6);
   }

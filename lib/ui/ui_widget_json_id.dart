@@ -3,11 +3,11 @@ import 'package:base85/base85.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:quiver/time.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
+import 'package:nemesis_helper/l10n.dart';
 import 'package:nemesis_helper/model/json_data.dart';
 import 'package:nemesis_helper/model/settings.dart';
 import 'package:nemesis_helper/ui/icons_images.dart';
@@ -73,6 +73,7 @@ class _JsonId extends StatefulWidget {
     required this.id,
     required this.collapsible,
     required this.searchBar,
+    required this.insideScrollable,
     required this.jumpToChapter,
   });
 
@@ -92,6 +93,15 @@ class _JsonId extends StatefulWidget {
 
   /// Do show search bar at top?
   final bool searchBar;
+
+  /// Are we already inside a scrollable widget?  Then for simplicity
+  /// use [Column] instead of [ScrollablePositionedList]; this also
+  /// means that we do not create global keys for chapters since
+  /// without list we won't be able to scroll to them.
+  ///
+  /// In case a need arises [SliverToBoxAdapter] can be used though
+  /// it requires manually calculating height.
+  final bool insideScrollable;
 
   /// Helper for searching for specific chapter outside of current [UIWidgetJsonId]
   final void Function(String id) jumpToChapter;
@@ -199,7 +209,7 @@ class _JsonIdState extends State<_JsonId>
                       .length >
                   1)
                 PopupMenuButton<int>(
-                  tooltip: AppLocalizations.of(context).tableOfContents,
+                  tooltip: context.l10n.tableOfContents,
                   icon: const Icon(Icons.menu_book),
                   iconColor: theme.colorScheme.secondary,
                   onSelected: (int index) {
@@ -244,8 +254,10 @@ class _JsonIdState extends State<_JsonId>
               Expanded(
                 child: TextField(
                   controller: this._searchController,
+                  textAlignVertical: TextAlignVertical.center,
+                  textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context).searchHint,
+                    hintText: context.l10n.searchHint,
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: IconButton(
                       onPressed: () {
@@ -262,30 +274,43 @@ class _JsonIdState extends State<_JsonId>
               ),
             ],
           ),
-        Expanded(
-          child: ScrollbarTheme(
-            data: const ScrollbarThemeData(
-                interactive: false, radius: Radius.zero),
-            child: ScrollablePositionedList.builder(
-              key: this._listKey,
-              initialScrollIndex: initialIndex,
-              initialAlignment: initialAlignment,
-              itemScrollController: this._itemScrollController,
-              itemPositionsListener: this._itemPositionsListener,
-              itemCount: widget.chapters.length,
-              itemBuilder: (context, index) {
-                return _renderChapter(
-                  context,
-                  widget.chapters[index],
-                  forceExpandCollapse,
-                  offstage: false,
-                  onLinkTap: (String jumpTo) =>
-                      _jump(context, jumpTo.substring(1)),
-                );
-              },
-            ),
-          ),
-        ),
+        (widget.insideScrollable)
+            ? Column(
+                children: widget.chapters.map((chapter) {
+                  return _renderChapter(
+                    context,
+                    chapter,
+                    forceExpandCollapse,
+                    offstage: false,
+                    onLinkTap: (String jumpTo) =>
+                        _jump(context, jumpTo.substring(1)),
+                  );
+                }).toList(),
+              )
+            : Expanded(
+                child: ScrollbarTheme(
+                  data: const ScrollbarThemeData(
+                      interactive: false, radius: Radius.zero),
+                  child: ScrollablePositionedList.builder(
+                    key: this._listKey,
+                    initialScrollIndex: initialIndex,
+                    initialAlignment: initialAlignment,
+                    itemScrollController: this._itemScrollController,
+                    itemPositionsListener: this._itemPositionsListener,
+                    itemCount: widget.chapters.length,
+                    itemBuilder: (context, index) {
+                      return _renderChapter(
+                        context,
+                        widget.chapters[index],
+                        forceExpandCollapse,
+                        offstage: false,
+                        onLinkTap: (String jumpTo) =>
+                            _jump(context, jumpTo.substring(1)),
+                      );
+                    },
+                  ),
+                ),
+              ),
       ],
     );
   }
@@ -605,18 +630,31 @@ class _JsonIdState extends State<_JsonId>
         ? _renderText(context, chapter, this._regex, onLinkTap, null)
         : (null, false);
 
+    final UIWidget? uiWidget;
+    if (chapter.uiWidget != null) {
+      uiWidget = chapter.uiWidget;
+    } else if (chapter.uiWidgetJson != null) {
+      final jsonData = context.read<JsonData>();
+      uiWidget = UIWidget.fromJson(chapter.uiWidgetJson!, jsonData.reference);
+      chapter.uiWidget = uiWidget;
+    } else {
+      uiWidget = null;
+    }
+
     // Make sure that all [ScrollablePositionedList] children have
     // global key.  It's necessary to avoid needless full rebuilds
     // (including state!!) for it's jumpTo() method.
     final List<Widget> result;
     switch ((
       renderedText,
+      uiWidget?.uiWidgetBuild(context, true),
       nestedWidgets.isEmpty ? null : nestedWidgets,
       widget.collapsible && chapter.depth.isCollapsible(),
       chapter.globalKey(offstage, widget.id),
     )) {
       case (
           Widget renderedText,
+          Widget? uiWidget,
           List<Widget> nestedWidgets,
           true,
           GlobalKey? globalKey
@@ -633,6 +671,7 @@ class _JsonIdState extends State<_JsonId>
         result = [
           ExpansionTile(
             key: globalKey,
+            tilePadding: const EdgeInsets.all(0),
             controller:
                 (offstage) ? null : chapter.expansionController(widget.id),
             // To make sure children widgets are always available for offset
@@ -656,35 +695,46 @@ class _JsonIdState extends State<_JsonId>
             // This cannot be null so for headers without
             // text use [Column] instead
             title: renderedText,
-            children: nestedWidgets,
+            children: [if (uiWidget != null) uiWidget, ...nestedWidgets],
           )
         ];
-      case (
-          Widget widget,
-          List<Widget> nestedWidgets,
-          false,
-          GlobalKey globalKey
-        ):
-        result = [
-          Column(key: globalKey, children: [widget, ...nestedWidgets])
-        ];
-      case (null, List<Widget> nestedWidgets, _, GlobalKey globalKey):
+      case (Widget renderedText, null, null, _, GlobalKey globalKey):
+        result = [SizedBox(key: globalKey, child: renderedText)];
+      case (null, Widget uiWidget, null, _, GlobalKey globalKey):
+        result = [SizedBox(key: globalKey, child: uiWidget)];
+      case (null, null, List<Widget> nestedWidgets, _, GlobalKey globalKey):
         result = switch ((nestedWidgets.length)) {
           (1) => [SizedBox(key: globalKey, child: nestedWidgets.first)],
           (_) => [Column(key: globalKey, children: nestedWidgets)],
         };
-      case (Widget widget, null, _, GlobalKey globalKey):
-        result = [SizedBox(key: globalKey, child: widget)];
-      case (null, null, _, GlobalKey globalKey):
+      case (null, null, null, _, GlobalKey globalKey):
         result = [SizedBox.shrink(key: globalKey)];
-      case (Widget? widget, List<Widget>? nestedWidgets, false, null):
-        result = [if (widget != null) widget, ...?nestedWidgets];
-      case (null, List<Widget> nestedWidgets, _, null):
-        result = nestedWidgets;
-      case (null, null, _, null):
-        result = [];
-      case (Widget widget, null, _, null):
-        result = [widget];
+      case (
+          Widget? renderedText,
+          Widget? uiWidget,
+          List<Widget>? nestedWidgets,
+          _,
+          GlobalKey globalKey
+        ):
+        result = [
+          Column(key: globalKey, children: [
+            if (renderedText != null) renderedText,
+            if (uiWidget != null) uiWidget,
+            if (nestedWidgets != null) ...nestedWidgets
+          ])
+        ];
+      case (
+          Widget? renderedText,
+          Widget? uiWidget,
+          List<Widget>? nestedWidgets,
+          _,
+          null
+        ):
+        result = [
+          if (renderedText != null) renderedText,
+          if (uiWidget != null) uiWidget,
+          ...?nestedWidgets
+        ];
       default:
         // Make compiler happy
         result = [];
@@ -945,9 +995,9 @@ class UIWidgetJsonId implements UIWidget {
   }
 
   @override
-  Widget uiWidgetBuild(BuildContext context, UISettings ui, dynamic arg) {
-    return Consumer<JsonData?>(
-      builder: (context, jsonData, _) {
+  Widget uiWidgetBuild(BuildContext context, bool insideScrollable) {
+    return Consumer2<UISettings, JsonData?>(
+      builder: (context, ui, jsonData, _) {
         if (jsonData == null) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -960,26 +1010,32 @@ class UIWidgetJsonId implements UIWidget {
           id: this._id,
           collapsible: this._collapsible,
           searchBar: this._searchBar,
+          insideScrollable: insideScrollable,
           jumpToChapter: (String searchId) {
-            final parents = <ReferenceChapter>[];
-            final chapter =
-                jsonData.reference.findChapterById(searchId, parents: parents);
-
-            final tab = jsonData.tabs
-                .where((tab) => (tab.widget is UIWidgetJsonId))
-                .where((tab) => parents.followedBy([chapter]).any((chapter) =>
-                    (tab.widget as UIWidgetJsonId)
-                        ._chapters
-                        .any((tabChapter) => tabChapter == chapter)))
-                .firstOrNull;
-            if (tab == null) return;
-
-            ui.tabIndex = jsonData.tabs.indexOf(tab);
-            ui.search = (searchId, (tab.widget as UIWidgetJsonId)._id);
-            DefaultTabController.of(context).animateTo(ui.tabIndex);
+            _jumpToChapter(context, jsonData, ui, searchId);
           },
         );
       },
     );
+  }
+
+  void _jumpToChapter(
+      BuildContext context, JsonData jsonData, UISettings ui, String searchId) {
+    final parents = <ReferenceChapter>[];
+    final chapter =
+        jsonData.reference.findChapterById(searchId, parents: parents);
+
+    final tab = jsonData.tabs
+        .where((tab) => (tab.widget is UIWidgetJsonId))
+        .where((tab) => parents.followedBy([chapter]).any((chapter) =>
+            (tab.widget as UIWidgetJsonId)
+                ._chapters
+                .any((tabChapter) => tabChapter == chapter)))
+        .firstOrNull;
+    if (tab == null) return;
+
+    ui.tabIndex = jsonData.tabs.indexOf(tab);
+    ui.search = (searchId, (tab.widget as UIWidgetJsonId)._id);
+    DefaultTabController.of(context).animateTo(ui.tabIndex);
   }
 }

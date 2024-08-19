@@ -2,9 +2,9 @@
 
 Interactive player aid for Nemesis board game
 
-## JSON format for reference screen
+## JSON format
 
-A tree of JSON files is used.  See description below and examples in `examples/` folder.
+A tree of JSON files is used to describe app's menus.  See description below and examples in `examples/` folder.
 
 ### Root JSON
 
@@ -24,7 +24,7 @@ For simplicity it's recommended to put all localized text into corresponding loc
 
 ### Modules
 
-Try this in main `data.json`:
+Use them to define separate modules (as in: base and DLCs). In main `data.json`:
 
 ```json
 "modules": [
@@ -34,16 +34,17 @@ Try this in main `data.json`:
 ]
 ```
 
-Then in `base.json`/`base_en.json` you can have module description and English content accordingly.
+Then in `base.json`/`base_en.json`/`base_XX.json` you can have module description and English/localized content accordingly.
 
 Allowed fields:
 - `"images"`/`"icons"` - same as in top level `data.json`.
 - `"default"`-  whether module is enabled on app's first start.
 - `"description"` - allow module to be selectable by user on settings screen.
-- `"reference"` - list of reference chapters of JSON map type, each of them can have these fields:
+- `"reference"` - list of reference chapters with fields:
     - `"id"` - optional chapter's id, useful for creating links to it.
-    - `"text"` - optional chapter's text, see [formatting](#formatting-of-text) below.
-    - `"nested"` - list of nested sub-chapters that can have all the same fields as this one.
+    - `"text"` - optional chapter's text, see [text formatting](#formatting-of-text) below.
+    - `"widget"` - nested [widget](#widgets), rendered below `text`.
+    - `"nested"` - list of nested sub-chapters that can have all the same fields as this one, rendered below `widget`.
 
     Note that the top level of `"reference"` is reserved for specifying tabs and cannot have `"text"` field.
 
@@ -89,10 +90,26 @@ Special GUI elements that can be embedded, currently allowed only in tabs.
 }
 ```
 
-- `"id"` - same as for `"reference"`, a globally unique id.
+- `"id"` - mandatory globally unique id (unique across `"reference"` too).
 - `"collapsible"` - default to true; whether to allow collapsing of chapters.
 - `"search_bar"` - default to false; whether to show a search bar on top.
 - `"root"` - point at `"reference"` to show in this widget.  Support optional suffix "/*" (without double quotes) that means all `"nested"` chapters should be loaded instead of the target chapter itself.
+
+#### authenticate
+
+```json
+"widget": {
+    "type": "authenticate",
+    "description": "Text to show before login invitation",
+    "widget": {
+        ...
+    }
+}
+```
+
+- "description" - text to show before login invitation, replaced by `"widget"` after login
+- "widget" - widget to show after login
+
 
 ### Patches
 

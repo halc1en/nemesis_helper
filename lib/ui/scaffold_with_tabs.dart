@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:nemesis_helper/ui/utils.dart';
 import 'package:provider/provider.dart';
 
+import 'package:nemesis_helper/l10n.dart';
 import 'package:nemesis_helper/model/json_data.dart';
 import 'package:nemesis_helper/model/settings.dart';
 import 'package:nemesis_helper/ui/icons_images.dart';
@@ -26,7 +27,7 @@ class ScaffoldWithTabs extends StatelessWidget {
 
     return DefaultTabController(
       length: tabs?.length ?? 0,
-      initialIndex: ui.tabIndex,
+      initialIndex: ui.tabIndex.clamp(0, tabs?.length ?? 0),
       child: Scaffold(
         bottomNavigationBar: Builder(builder: (context) {
           return BottomAppBar(
@@ -58,29 +59,9 @@ class ScaffoldWithTabs extends StatelessWidget {
                     ],
                   ),
                 ),
-                const VerticalDivider(
-                    thickness: 1.5, endIndent: 0.0, width: 1.5),
+                const VDivider(),
                 // Settings button
-                IconButton(
-                  color: Theme.of(context).appBarTheme.foregroundColor,
-                  tooltip: AppLocalizations.of(context).settings,
-                  icon: const Icon(Icons.settings),
-                  onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute<void>(
-                        builder: (BuildContext context) {
-                          return Consumer<JsonData?>(
-                            builder: (context, jsonData, _) {
-                              return SettingsDialog(
-                                supportedLanguages:
-                                    jsonData?.supportedLanguages,
-                                loadedModules: jsonData?.selectableModules,
-                              );
-                            },
-                          );
-                        },
-                        fullscreenDialog: true));
-                  },
-                ),
+                _SettingButton(ui: ui),
               ],
             ),
           );
@@ -91,11 +72,44 @@ class ScaffoldWithTabs extends StatelessWidget {
 
           return TabBarView(
             children: (tabs ?? <JsonTab>[])
-                .map((tab) => tab.widget.uiWidgetBuild(context, ui, null))
+                .map((tab) => tab.widget.uiWidgetBuild(context, false))
                 .toList(),
           );
         }),
       ),
+    );
+  }
+}
+
+class _SettingButton extends StatelessWidget {
+  const _SettingButton({
+    super.key,
+    required this.ui,
+  });
+
+  final UISettings ui;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      color: Theme.of(context).appBarTheme.foregroundColor,
+      tooltip: context.l10n.settings,
+      icon: const Icon(Icons.settings),
+      onPressed: () {
+        Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (BuildContext context) {
+              return Consumer<JsonData?>(
+                builder: (context, jsonData, _) {
+                  return SettingsDialog(
+                    ui: ui,
+                    supportedLanguages: jsonData?.supportedLanguages,
+                    loadedModules: jsonData?.selectableModules,
+                  );
+                },
+              );
+            },
+            fullscreenDialog: true));
+      },
     );
   }
 }

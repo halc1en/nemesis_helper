@@ -149,7 +149,7 @@ class UISettings extends ChangeNotifier {
       if (scaleValue != null) _scale = scaleValue.clamp(scaleMin, scaleMax);
 
       final tabIndexValue = preferences.getInt("tab_index");
-      if (tabIndexValue != null) _tabIndex = tabIndexValue.clamp(0, 1);
+      if (tabIndexValue != null) _tabIndex = tabIndexValue;
 
       final languageValue = preferences.getString("language");
       final countryValue = preferences.getString("country");

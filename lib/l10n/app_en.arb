@@ -1,14 +1,50 @@
 {
+    "account": "Account",
+    "accountName": "Name: ",
     "appTitle": "Nemesis helper",
-
-    "tableOfContents": "Table of contents",
-    "searchHint": "Search",
-
-    "settings": "Settings",
-    "modules": "Modules: ",
+    "cancel": "Cancel",
+    "debugging": "Debugging",
+    "deleteAccount": "Delete my account",
+    "deleteAccountConfirmation": "This will irreversibly delete your account and all of its data! If you are sure then enter \"{code}\".",
+    "@deleteAccountConfirmation": {
+        "placeholders": {
+            "code": {}
+        }
+    },
+    "email": "Email",
+    "findAddFriends": "Find and add friends",
+    "findFriends": "Find friends",
+    "friends": "Friends: ",
+    "interface": "Interface",
+    "invalidEmail": "Enter valid email",
     "language": "Language: ",
     "languageSystem": "System",
-    "scaleDescription": "Set text scale across the whole application",
-    "scale": "Text scale: ",
-    "offlineMode": "Offline mode: "
+    "login": "Log in",
+    "loginFail": "Login failed",
+    "loginWithEmail": "Log in with email",
+    "loginWithGoogle": "Log in with Google",
+    "modules": "Modules",
+    "nameTaken": "Name \"{name}\" is talen",
+    "@nameTaken": {
+        "placeholders": {
+            "name": {}
+        }
+    },
+    "nFriends": "{count,plural, =1{1 friend} other{{count} friends}}",
+    "@nFriends": {
+        "placeholders": {
+            "count": {}
+        }
+    },
+    "offlineMode": "Offline mode",
+    "otpEmailFail": "Could not send email with code",
+    "otpVerifyFail": "Error when verifying code",
+    "save": "Save",
+    "scaleDescription": "Set text and interface scaling in the app",
+    "scale": "Scale: ",
+    "searchHint": "Search",
+    "settings": "Settings",
+    "sixDigitCode": "6 digit code",
+    "signOut": "Sign out",
+    "tableOfContents": "Table of contents"
 }
