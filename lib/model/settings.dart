@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UISettings extends ChangeNotifier {
-  final SharedPreferences? sharedPreferences;
+  final SharedPreferencesWithCache? sharedPreferences;
 
   static const double scaleMin = 0.5;
   static const double scaleMax = 1.8;

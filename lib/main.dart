@@ -30,7 +30,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   SharedPreferences.setPrefix('');
-  final sharedPreferences = SharedPreferences.getInstance();
+  final sharedPreferences = SharedPreferencesWithCache.create(
+      cacheOptions: const SharedPreferencesWithCacheOptions());
 
   final supabaseInit = Supabase.initialize(
     url: 'https://crkiyacenvzsbetbmmyg.supabase.co',
@@ -52,7 +53,7 @@ void main() async {
 class AppLoader extends StatefulWidget {
   const AppLoader(this.preferences, {super.key});
 
-  final SharedPreferences? preferences;
+  final SharedPreferencesWithCache? preferences;
 
   @override
   State<AppLoader> createState() => _AppLoaderState();

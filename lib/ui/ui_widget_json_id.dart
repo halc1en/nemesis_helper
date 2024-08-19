@@ -77,7 +77,7 @@ class _JsonId extends StatefulWidget {
     required this.jumpToChapter,
   });
 
-  final SharedPreferences? sharedPreferences;
+  final SharedPreferencesWithCache? sharedPreferences;
   final ReferenceAssets assets;
 
   /// Chapters to build
